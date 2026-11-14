@@ -41,25 +41,43 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 
 ## 3. 功能需求
 
-### 3.1 模型接入（设置）
+### 3.1 模型接入（多供应商 / 多模型）
 
-- 协议下拉：`OpenAI 兼容`（`/chat/completions`）与 `Anthropic`（`/messages`）
-- **接口地址完全自定义**：任何第三方网关、代理、本地模型均可
-  - 地址规范化：已带 `/messages` 或 `/chat/completions` 直接使用；误填另一协议路径时自动纠正
-  - 只给域名时补 `/v1/...`
-  - 设置页实时显示"最终请求地址"
-- API Key、模型名、Temperature、Max tokens、超时、最大工具步数、回答语言、额外请求头
-- 供应商预设（只填地址与模型，均可改）：
-  OpenAI / Anthropic / DeepSeek / 阿里云百炼·通义千问 / 智谱 GLM / Moonshot Kimi /
-  SiliconFlow / OpenRouter / 本地 Ollama / Azure OpenAI / 自定义×2
-- **「测试连接」**：失败时显示状态码与实际请求地址，404 给出路径提示
-- **「清除配置」**：删除 localStorage 副本并把默认值写回 `extensionConfig`
+**数据模型**
 
-存储：
+```
+{
+  language, temperature, maxTokens, timeout, maxSteps, extraHeaders,
+  active: { providerId, modelId },
+  providers: [
+    { id, name, protocol:'openai'|'anthropic', baseUrl, apiKey,
+      collapsed, models:[{ id, name }] }
+  ]
+}
+```
 
-- 主：编辑器 `api('saveConfig')` → `extensionConfig[<扩展ID>].config`
-- 镜像：`localStorage['eai.config.v2.<扩展ID>']`
-- **移除扩展不会清除这些数据**（平台行为），故提供"清除配置"
+- 可**同时保存多个供应商**，每个供应商有自己的协议、地址、Key 与模型列表
+- 一个供应商可保存**多个模型**
+- `active` 记录面板当前使用的供应商与模型；`resolve()` 把两者拍平成运行时配置
+- 旧版扁平配置（`provider/baseUrl/apiKey/model`）加载时**自动迁移**为新结构
+
+**设置界面**：左侧导航 + 右侧详情
+
+| 左侧 | 右侧 |
+|---|---|
+| 供应商与模型 | 供应商卡片列表（可折叠）：名称、协议、地址、Key、模型列表 |
+| 生成参数 | Temperature / Max tokens / 超时 / 最大工具步数 / 回答语言 / 额外请求头 |
+| 诊断 | 诊断信息 + 复制 |
+
+- 「添加供应商」下拉：自定义或内置预设（OpenAI / Claude / DeepSeek / 通义千问 /
+  智谱 / Kimi / SiliconFlow / OpenRouter / Ollama / Azure）
+- 模型组支持「+ 新增模型」与「获取模型列表」（`GET <base>/models`），
+  拉取结果以勾选清单呈现，**已有模型自动置灰**，只添加所选
+- **重复检测**：供应商名称、同一供应商下的模型名（不区分大小写）实时标红；
+  保存前再次校验，重复则拒绝保存
+- 配置项说明独立成行（位于控件下方），不再挤在右侧
+- 「清除配置」使用**内联确认**（不使用浏览器原生 confirm，可能被禁用）
+- 保存 / 取消：编辑在草稿副本上进行，取消即丢弃
 
 ### 3.2 AI 面板
 
@@ -76,6 +94,7 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 - 输入框**随内容增高**（最多 6 行）；拖动分隔线可手动加大，对话区同步收缩
 - 图片：按钮选择 / `Ctrl+V` 粘贴 / 拖入；缩略图 + 文件名胶囊，最多 4 张，可移除
 - 发送键运行中变为**红色方形停止键**；点击停止本轮（当前请求返回后结束）
+- 发送键左侧有**模型切换下拉**：按供应商分组列出全部模型，切换后立即保存并生效
 - **清空会话**：清 history、报告、附件与预设标记
 - 消息：用户右对齐、AI/系统/错误左对齐；头像为线性图标
 - **复制**：每条 AI / 错误消息下方有复制按钮（原始 Markdown，clipboard API + execCommand 兜底）

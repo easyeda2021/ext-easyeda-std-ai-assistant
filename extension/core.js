@@ -128,8 +128,8 @@
 
 	/** Current editor language code, e.g. "en" / "zh-hans". */
 	EAI.lang = function () {
-		/* unknown -> Chinese: the UI is authored in Chinese */
-		try { return (EAI.L && EAI.L._curr) || 'zh-hans'; } catch (e) { return 'zh-hans'; }
+		/* unknown -> English */
+		try { return (EAI.L && EAI.L._curr) || 'en'; } catch (e) { return 'en'; }
 	};
 
 	EAI.toast = function (msg, level) {
@@ -239,79 +239,205 @@
 		return CFG_LOCAL_PREFIX + EAI.discoverExtId();
 	}
 
+	/*
+	 * Configuration model (multi provider / multi model)
+	 *
+	 * {
+	 *   language, temperature, maxTokens, timeout, maxSteps, extraHeaders,
+	 *   active: { providerId, modelId },
+	 *   providers: [
+	 *     { id, name, protocol:'openai'|'anthropic', baseUrl, apiKey,
+	 *       collapsed:false, models:[{ id, name }] }
+	 *   ]
+	 * }
+	 */
+	var cfgSeq = 0;
+	function cfgId(prefix) {
+		cfgSeq++;
+		return prefix + '-' + Date.now().toString(36) + cfgSeq.toString(36);
+	}
+
+	EAI.cfgId = cfgId;
+
+	function newModel(name) {
+		return { id: cfgId('m'), name: String(name || '').trim() };
+	}
+
 	EAI.cfgDefaults = {
-		provider: 'openai',
-		baseUrl: '',
-		apiKey: '',
-		model: '',
+		language: 'zh',
 		temperature: 0.2,
 		maxTokens: 8192,
-		language: 'zh',
 		timeout: 300,
+		maxSteps: 12,
 		extraHeaders: '',
-		maxSteps: 12
+		active: { providerId: '', modelId: '' },
+		providers: []
 	};
 
+	function defaultConfig() {
+		var p = {
+			id: cfgId('p'),
+			name: 'OpenAI',
+			protocol: 'openai',
+			baseUrl: 'https://api.openai.com/v1',
+			apiKey: '',
+			collapsed: false,
+			models: [newModel('gpt-6.0')]
+		};
+		return {
+			language: 'zh',
+			temperature: 0.2,
+			maxTokens: 8192,
+			timeout: 300,
+			maxSteps: 12,
+			extraHeaders: '',
+			providers: [p],
+			active: { providerId: p.id, modelId: p.models[0].id }
+		};
+	}
+
+	/** Old flat configs (provider/baseUrl/apiKey/model) → new shape. */
+	function migrateConfig(c) {
+		if (!c || typeof c !== 'object') return null;
+		if (Object.prototype.toString.call(c.providers) === '[object Array]') return c;
+
+		var p = {
+			id: cfgId('p'),
+			name: c.provider === 'anthropic' ? 'Anthropic Claude' : 'OpenAI',
+			protocol: c.provider === 'anthropic' ? 'anthropic' : 'openai',
+			baseUrl: c.baseUrl || '',
+			apiKey: c.apiKey || '',
+			collapsed: false,
+			models: c.model ? [newModel(c.model)] : []
+		};
+		var hasData = !!(p.baseUrl || p.apiKey || p.models.length);
+		return {
+			language: c.language || 'zh',
+			temperature: c.temperature != null ? c.temperature : 0.2,
+			maxTokens: c.maxTokens || 8192,
+			timeout: c.timeout || 300,
+			maxSteps: c.maxSteps || 12,
+			extraHeaders: c.extraHeaders || '',
+			providers: hasData ? [p] : [],
+			active: { providerId: hasData ? p.id : '', modelId: p.models[0] ? p.models[0].id : '' }
+		};
+	}
+
 	EAI.cfg = {
-		load: function () {
-			var raw = null, c = null;
+		/** raw configuration (providers + global options) */
+		raw: function (force) {
+			if (EAI._cfg && !force) return EAI._cfg;
+
+			var c = null;
 			try {
-				raw = window.localStorage.getItem(localCfgKey());
-				if (raw) c = JSON.parse(raw);
+				var stored = window.localStorage.getItem(localCfgKey());
+				if (stored) c = JSON.parse(stored);
 			} catch (e) { /* ignore */ }
+
 			if (!c) {
 				try {
 					var v = EAI.api('readConfig', CFG_STORE_KEY);
 					if (v) c = (typeof v === 'string') ? JSON.parse(v) : v;
 				} catch (e) { /* ignore */ }
 			}
-			var out = {}, key;
-			for (key in EAI.cfgDefaults) {
-				if (Object.prototype.hasOwnProperty.call(EAI.cfgDefaults, key)) {
-					out[key] = EAI.cfgDefaults[key];
-				}
-			}
-			if (c && typeof c === 'object') {
-				for (key in c) {
-					if (Object.prototype.hasOwnProperty.call(c, key) &&
-						c[key] !== undefined && c[key] !== null) out[key] = c[key];
-				}
-			}
+
+			var out = migrateConfig(c) || defaultConfig();
+			EAI._cfg = out;
 			return out;
 		},
 
-		save: function (cfg) {
-			try { window.localStorage.setItem(localCfgKey(), JSON.stringify(cfg)); }
+		/** flat runtime configuration used by llm.js / agent.js */
+		resolve: function (raw) {
+			raw = raw || EAI.cfg.raw();
+			var provs = raw.providers || [];
+			var p = null, i;
+
+			for (i = 0; i < provs.length; i++) {
+				if (provs[i].id === (raw.active && raw.active.providerId)) { p = provs[i]; break; }
+			}
+			if (!p) p = provs[0] || null;
+
+			var m = null;
+			if (p) {
+				var models = p.models || [];
+				for (i = 0; i < models.length; i++) {
+					if (models[i].id === (raw.active && raw.active.modelId)) { m = models[i]; break; }
+				}
+				if (!m) m = models[0] || null;
+			}
+
+			return {
+				provider: (p && p.protocol) || 'openai',
+				baseUrl: (p && p.baseUrl) || '',
+				apiKey: (p && p.apiKey) || '',
+				model: (m && m.name) || '',
+				providerName: (p && p.name) || '',
+				providerId: (p && p.id) || '',
+				modelId: (m && m.id) || '',
+				language: raw.language || 'zh',
+				temperature: raw.temperature,
+				maxTokens: raw.maxTokens,
+				timeout: raw.timeout,
+				maxSteps: raw.maxSteps,
+				extraHeaders: raw.extraHeaders || ''
+			};
+		},
+
+		/** runtime config (previous `current()` contract) */
+		current: function () {
+			return EAI.cfg.resolve(EAI.cfg.raw());
+		},
+
+		save: function (raw) {
+			raw = migrateConfig(raw) || raw;
+			EAI._cfg = raw;
+			try { window.localStorage.setItem(localCfgKey(), JSON.stringify(raw)); }
 			catch (e) { /* ignore */ }
 			try {
-				var id = EAI.discoverExtId();
 				var payload = {};
-				payload[id] = {};
-				payload[id][CFG_STORE_KEY] = JSON.stringify(cfg);
+				payload[EAI.discoverExtId()] = {};
+				payload[EAI.discoverExtId()][CFG_STORE_KEY] = JSON.stringify(raw);
 				EAI.api('saveConfig', payload);
 			} catch (e) { EAI.log('saveConfig failed: ' + e, 'error'); }
-			return cfg;
-		},
-
-		current: function () {
-			if (!EAI._cfg) EAI._cfg = EAI.cfg.load();
-			return EAI._cfg;
-		},
-
-		update: function (patch) {
-			var c = EAI.cfg.current(), k;
-			for (k in patch) {
-				if (Object.prototype.hasOwnProperty.call(patch, k)) c[k] = patch[k];
-			}
-			EAI.cfg.save(c);
-			return c;
+			return raw;
 		},
 
 		ready: function () {
 			var c = EAI.cfg.current();
 			return !!(c.apiKey && c.baseUrl && c.model);
+		},
+
+		/** switch the model used by the panel */
+		setActive: function (providerId, modelId) {
+			var raw = U_clone(EAI.cfg.raw());
+			raw.active = { providerId: providerId, modelId: modelId };
+			EAI.cfg.save(raw);
+			return raw;
+		},
+
+		/** true when another provider already uses this name */
+		nameTaken: function (raw, name, exceptId) {
+			var n = String(name || '').trim().toLowerCase();
+			if (!n) return false;
+			return (raw.providers || []).some(function (p) {
+				return p.id !== exceptId && String(p.name || '').trim().toLowerCase() === n;
+			});
+		},
+
+		/** true when the provider already has this model name */
+		modelTaken: function (provider, name, exceptId) {
+			var n = String(name || '').trim().toLowerCase();
+			if (!n) return false;
+			return ((provider && provider.models) || []).some(function (m) {
+				return m.id !== exceptId && String(m.name || '').trim().toLowerCase() === n;
+			});
 		}
 	};
+
+	function U_clone(o) {
+		try { return JSON.parse(JSON.stringify(o)); }
+		catch (e) { return o; }
+	}
 
 	/* ----------------------------------------------------------- dialogs -- */
 

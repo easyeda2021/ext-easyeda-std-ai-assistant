@@ -18,6 +18,12 @@
 	var ghostBtn = UI.ghostBtn;
 	var mdToHtml = UI.mdToHtml;
 
+	/* module state (kept in this file after the UI split) */
+	var history = [];          /* conversation */
+	var lastReport = '';       /* markdown of the last answer */
+	var pendingImages = [];    /* images attached by the user */
+	var busy = false;          /* an agent run is in flight */
+
 	/* shared helpers live in ui-base.js */
 	var isAlive = UI.isAlive;
 
@@ -140,6 +146,13 @@
 				alignItems: 'center', gap: '5px', overflow: 'hidden'
 			}) + '"></div>' +
 			'  </div>' +
+
+			'  <select id="eai-model-pick" title="切换模型" style="' + st({
+				height: '26px', maxWidth: '132px', boxSizing: 'border-box', padding: '0 6px',
+				borderRadius: '999px', border: '1px solid #dbe4f1', background: '#fff',
+				fontSize: '11px', color: '#2b4462', fontFamily: FONT, outline: 'none',
+				flex: '0 0 auto'
+			}) + '"></select>' +
 
 			'  <button id="eai-send" class="eai-btn" title="发送（Ctrl + Enter）" style="' + st({
 				position: 'absolute', right: '7px', bottom: '6px',
@@ -339,6 +352,14 @@
 			});
 		})();
 
+		$('#eai-model-pick', $d).on('change', function () {
+			var v = String($(this).val() || '');
+			var i = v.indexOf('|');
+			if (i < 0) return;
+			EAI.cfg.setActive(v.slice(0, i), v.slice(i + 1));
+			UI.refreshStatus();
+		});
+
 		$('#eai-btn-log', $d).on('click', function (e) {
 			e.preventDefault();
 			UI.openLogWindow();
@@ -376,6 +397,7 @@
 		});
 
 		UI.renderPills();
+		UI.renderModelPicker();
 		UI.refreshStatus();
 		UI.appendMsg('sys', '你好！当前文档：' + EAI.eda.docKindLabel() +
 			'。点上面的胶囊按钮可以快速填入提示词，然后点「发送」。');
@@ -461,7 +483,8 @@
 		var $ = EAI.jq;
 		var cfg = EAI.cfg.current();
 		var txt = cfg.model
-			? ((cfg.provider === 'anthropic' ? 'Claude' : 'OpenAI') + ' · ' + cfg.model)
+			? ((cfg.providerName || (cfg.provider === 'anthropic' ? 'Claude' : 'OpenAI')) +
+				' · ' + cfg.model)
 			: '未配置';
 		if (!cfg.apiKey) txt = '未配置';
 		var sub = $('#eai-sub', UI.dlgPanel);
@@ -641,6 +664,37 @@
 
 		UI._composeH = boxH;
 		box.css('height', boxH + 'px');
+	};
+
+	/** Model switcher next to the send button. */
+	UI.renderModelPicker = function () {
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		var sel = $('#eai-model-pick', UI.dlgPanel);
+		if (!sel.length) return;
+
+		var raw = EAI.cfg.raw();
+		var provs = raw.providers || [];
+		sel.empty();
+
+		provs.forEach(function (p) {
+			var models = p.models || [];
+			if (!models.length) return;
+			var g = $('<optgroup></optgroup>').attr('label', p.name || 'Provider');
+			models.forEach(function (m) {
+				var o = $('<option></option>')
+					.attr('value', p.id + '|' + m.id)
+					.text(m.name || '(未命名)');
+				if (p.id === (raw.active && raw.active.providerId) &&
+					m.id === (raw.active && raw.active.modelId)) {
+					o.attr('selected', 'selected');
+				}
+				g.append(o);
+			});
+			sel.append(g);
+		});
+
+		if (!sel.children().length) sel.append('<option value="">未配置</option>');
 	};
 
 	/** Swaps the send arrow for a stop square while the agent is running. */

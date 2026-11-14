@@ -280,6 +280,48 @@
 		});
 	}
 
+	/** GET <base>/models — OpenAI-compatible and Anthropic gateways. */
+	L.listModels = function (cfg) {
+		var url = L.endpoint(cfg).replace(/\/(chat\/completions|messages)$/i, '/models');
+		var headers = {};
+		if (cfg.provider === 'anthropic') {
+			headers['x-api-key'] = cfg.apiKey;
+			headers['anthropic-version'] = headers['anthropic-version'] || '2023-06-01';
+		} else {
+			headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+		}
+
+		return fetch(url, { method: 'GET', headers: headers }).then(function (r) {
+			return r.text().then(function (t) {
+				if (!r.ok) {
+					var msg = 'HTTP ' + r.status + ' ' + r.statusText;
+					try {
+						var j = JSON.parse(t);
+						if (j.error) msg += ' — ' + (j.error.message || j.error.type || '');
+					} catch (e) { msg += ' — ' + t.slice(0, 200); }
+					throw new Error(msg);
+				}
+				var obj;
+				try { obj = JSON.parse(t); }
+				catch (e) { throw new Error('invalid JSON: ' + t.slice(0, 200)); }
+				var arr = obj.data || obj.models || [];
+				var out = [];
+				arr.forEach(function (it) {
+					var id = it && (it.id || it.name || it.model);
+					if (id) out.push(String(id));
+				});
+				return out;
+			});
+		}).catch(function (e) {
+			if (e && e instanceof TypeError) {
+				var e2 = new Error('Network/CORS: ' + e.message);
+				e2.isCors = true;
+				throw e2;
+			}
+			throw e;
+		});
+	};
+
 	/**
 	 * Sends a chat request.
 	 * @returns {Promise<string>} the assistant text

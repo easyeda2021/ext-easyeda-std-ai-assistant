@@ -14,6 +14,8 @@
 	var ghostBtn = UI.ghostBtn;
 	var isAlive = UI.isAlive;
 	var mdToHtml = UI.mdToHtml;
+
+	var lastReport = '';
 	var linkify = UI.linkify;
 
 
