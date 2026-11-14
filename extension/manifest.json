@@ -1,0 +1,19 @@
+{
+	"name": "AI Assistant",
+	"description": "AI-powered design review, BOM analysis, screenshot review and schematic generation for EasyEDA",
+	"icons": {
+		"default": "icon.svg",
+		"16": "icon16.png",
+		"24": "icon24.png",
+		"32": "icon32.png"
+	},
+	"locale": "locale.txt",
+	"scripts": [
+		"core.js",
+		"llm.js",
+		"eda.js",
+		"actions.js",
+		"ui.js",
+		"main.js"
+	]
+}
