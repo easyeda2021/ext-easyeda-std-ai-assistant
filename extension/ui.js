@@ -290,9 +290,10 @@
 		image: '<rect x="3" y="3.5" width="18" height="17" rx="2.5"/>' +
 			'<circle cx="8.6" cy="8.8" r="1.5"/><path d="M21 15.2l-4.3-4.3L5.6 21"/>',
 		send: '<path d="M12 19.5V5.2"/><path d="M6.4 10.8L12 5.2l5.6 5.6"/>',
-		stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.4"/>',
+		stop: '<rect x="7" y="7" width="10" height="10" rx="2" fill="#ffffff" stroke="none"/>',
 		copy: '<rect x="9" y="9" width="11" height="11" rx="2.4"/>' +
-			'<path d="M5.4 15.2V6a1.6 1.6 0 0 1 1.6-1.6h8.4"/>'
+			'<path d="M5.4 15.2V6a1.6 1.6 0 0 1 1.6-1.6h8.4"/>',
+		log: '<path d="M4.5 6.5h15"/><path d="M4.5 12h15"/><path d="M4.5 17.5h9.5"/>'
 	};
 
 	function iconBtn(id, title, paths) {
@@ -351,14 +352,7 @@
 			}) + '">正在读取文档…</div>' +
 			'</div>' +
 
-			/* the two tabs live in the title bar — no extra row, no scrollbar */
-			'<div style="' + st({
-				display: 'flex', gap: '4px', alignItems: 'center', flex: '0 0 auto'
-			}) + '">' +
-			'  <a href="#" class="eai-tab eai-active" data-tab="chat" style="' + segCss(true) + '">对话</a>' +
-			'  <a href="#" class="eai-tab" data-tab="log" style="' + segCss(false) + '">日志</a>' +
-			'</div>' +
-
+			iconBtn('eai-btn-log', '运行日志（独立窗口）', ICONS.log) +
 			iconBtn('eai-btn-clear', '清空会话', ICONS.trash) +
 			iconBtn('eai-btn-settings', '设置', ICONS.settings) +
 			'</div>';
@@ -369,7 +363,8 @@
 	function panelHtml() {
 		return styleBlock() + '<div class="eai-root" style="' + st({
 			fontFamily: FONT, fontSize: '13px', color: C.text, lineHeight: '1.6',
-			background: C.bg, margin: '0', padding: '0'
+			background: C.bg, margin: '0', padding: '0',
+			height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden'
 		}) + '">' +
 			headerHtml() +
 
@@ -380,22 +375,20 @@
 				borderBottom: '1px solid ' + C.border
 			}) + '"></div>' +
 			'  <div id="eai-chat" class="eai-chat" style="' + st({
-				height: '318px', overflowY: 'auto', padding: '13px 14px',
-				background: '#f8fafd'
+				flex: '1 1 auto', minHeight: '110px', overflowY: 'auto',
+				padding: '13px 14px', background: '#f8fafd'
 			}) + '"></div>' +
+			/* drag up/down to grow the input box, shrink the conversation */
+			'  <div id="eai-resize" title="拖动调整输入框高度" style="' + st({
+				flex: '0 0 auto', height: '7px', cursor: 'ns-resize',
+				display: 'flex', alignItems: 'center', justifyContent: 'center',
+				background: C.bg, borderTop: '1px solid ' + C.border
+			}) + '"><span style="' + st({
+				width: '36px', height: '3px', borderRadius: '3px', background: '#d3dceb'
+			}) + '"></span></div>' +
 			composeHtml() +
 			'</div>' +
 
-			'<div class="eai-pane" data-pane="log" style="display:none">' +
-			'  <div id="eai-log" class="eai-log" style="' + st({
-				height: '430px', overflowY: 'auto', background: '#101926', color: '#c3d3e6',
-				padding: '12px 14px', fontFamily: MONO, fontSize: '11.5px',
-				lineHeight: '1.55',
-				'user-select': 'text !important',
-				'-webkit-user-select': 'text !important',
-				cursor: 'text'
-			}) + '"></div>' +
-			'</div>' +
 			'</div>';
 	}
 
@@ -413,40 +406,48 @@
 		return '<div style="' + st({
 			padding: '8px 13px 8px', borderTop: '1px solid ' + C.border, background: C.bg
 		}) + '">' +
-			/* the rounded box IS the input; the textarea inside has no chrome */
+			/*
+			 * One rounded box.  The textarea fills it; the image button, the
+			 * attachment chips and the send arrow are overlaid on its bottom
+			 * edge, so they never steal a row from the text area.
+			 */
 			'<div id="eai-inputbox" style="' + st({
+				position: 'relative', height: (UI._composeH || 112) + 'px', boxSizing: 'border-box',
 				border: '1px solid ' + C.borderStrong, borderRadius: '12px',
-				background: '#fff', padding: '6px 8px 5px', boxSizing: 'border-box'
+				background: '#fff'
 			}) + '">' +
-			'  <textarea id="eai-input" class="eai-in" rows="2" style="' + st({
-				width: '100%', height: '44px', resize: 'none', boxSizing: 'border-box',
-				border: 'none', borderRadius: '8px', padding: '2px 4px',
-				fontSize: '12.5px', fontFamily: FONT, color: C.text,
-				outline: 'none', lineHeight: '1.5', background: 'transparent',
-				display: 'block'
+			'  <textarea id="eai-input" class="eai-in" style="' + st({
+				position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
+				boxSizing: 'border-box', border: 'none', borderRadius: '12px',
+				padding: '9px 46px 32px 11px', fontSize: '12.5px', fontFamily: FONT,
+				color: C.text, outline: 'none', resize: 'none', lineHeight: '1.5',
+				background: 'transparent', display: 'block'
 			}) + '" placeholder="描述需求，或点胶囊按钮填入提示词…&#10;Ctrl + Enter 发送 · 可粘贴图片"></textarea>' +
 
 			'  <div style="' + st({
-				display: 'flex', alignItems: 'center', gap: '6px',
-				marginTop: '3px', minHeight: '28px'
+				position: 'absolute', left: '8px', right: '46px', bottom: '7px',
+				height: '26px', display: 'flex', alignItems: 'center', gap: '6px'
 			}) + '">' +
 			'    <a href="#" id="eai-btn-image" title="添加图片（也可直接粘贴）" style="' + st({
 				width: '26px', height: '26px', borderRadius: '7px', flex: '0 0 auto',
 				display: 'flex', alignItems: 'center', justifyContent: 'center',
-				color: '#5a6b85', textDecoration: 'none', lineHeight: '0'
-			}) + '">' + svgIcon(ICONS.image, 16) + '</a>' +
+				color: '#5a6b85', textDecoration: 'none', lineHeight: '0',
+				background: '#f2f5fa'
+			}) + '">' + svgIcon(ICONS.image, 15) + '</a>' +
 			'    <div id="eai-chips" style="' + st({
 				flex: '1 1 auto', minWidth: '0', display: 'flex',
 				alignItems: 'center', gap: '5px', overflow: 'hidden'
 			}) + '"></div>' +
-			'    <button id="eai-send" class="eai-btn" title="发送（Ctrl + Enter）" style="' + st({
+			'  </div>' +
+
+			'  <button id="eai-send" class="eai-btn" title="发送（Ctrl + Enter）" style="' + st({
+				position: 'absolute', right: '7px', bottom: '6px',
 				width: '30px', height: '30px', padding: '0', borderRadius: '9px',
 				background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
 				display: 'flex', alignItems: 'center', justifyContent: 'center',
-				boxShadow: '0 2px 8px rgba(47,111,191,.32)', boxSizing: 'border-box',
-				flex: '0 0 auto'
+				boxShadow: '0 2px 8px rgba(47,111,191,.32)', boxSizing: 'border-box'
 			}) + '">' + svgIcon(ICONS.send, 14, '#ffffff') + '</button>' +
-			'  </div>' +
+
 			'  <input type="file" id="eai-file" accept="image/*" style="display:none">' +
 			'</div>' +
 			'</div>';
@@ -553,8 +554,8 @@
 
 		var ctl = EAI.dlg({
 			title: 'AI 助手',
-			width: 740,
-			height: 620,
+			width: 660,
+			height: 600,
 			modal: false,
 			content: panelHtml()
 		});
@@ -604,9 +605,36 @@
 			imagesFromEvent(e).forEach(function (f) { UI.attachImageFile(f); });
 		});
 
-		$('.eai-tab', $d).on('click', function (e) {
+		/* drag the divider to re-size the input box */
+		(function enableResize() {
+			var handle = $('#eai-resize', $d);
+			var box = $('#eai-inputbox', $d);
+			if (!handle.length || !box.length) return;
+			var dragging = false, startY = 0, startH = 0;
+
+			handle.on('mousedown', function (e) {
+				dragging = true;
+				startY = e.clientY;
+				startH = box[0].offsetHeight || UI._composeH || 112;
+				e.preventDefault();
+				$(document).off('.eairesize');
+				$(document)
+					.on('mousemove.eairesize', function (ev) {
+						if (!dragging) return;
+						var h = Math.min(320, Math.max(84, startH - (ev.clientY - startY)));
+						UI._composeH = h;
+						box.css('height', h + 'px');
+					})
+					.on('mouseup.eairesize', function () {
+						dragging = false;
+						$(document).off('.eairesize');
+					});
+			});
+		})();
+
+		$('#eai-btn-log', $d).on('click', function (e) {
 			e.preventDefault();
-			UI.activateTab($(this).data('tab'));
+			UI.openLogWindow();
 		});
 
 		$('#eai-send', $d).on('click', function () {
@@ -925,9 +953,9 @@
 	var logSeq = 0;
 
 	UI.appendLog = function (line) {
-		if (!UI.dlgPanel) return;
+		if (!UI.dlgLog) return;
 		var $ = EAI.jq;
-		var box = $('#eai-log', UI.dlgPanel);
+		var box = $('#eai-log', UI.dlgLog);
 		if (!box.length) return;
 		logSeq++;
 		/* JSON / multi-line payloads are collapsed into one wrapped line so
@@ -1090,6 +1118,59 @@
 
 	/* ------------------------------------------------------------- send -- */
 
+	/* ------------------------------------------------------ log window -- */
+
+	/**
+	 * The log lives in its own non-modal window so it can stay open next to
+	 * the editor and be compared with the chat while the agent runs.
+	 */
+	UI.openLogWindow = function () {
+		injectStyle();
+		var $ = EAI.jq;
+
+		if (UI.dlgLog) {
+			try { UI.dlgLogCtl.open(); } catch (e) { /* ignore */ }
+			return UI.dlgLog;
+		}
+
+		var html = styleBlock() + '<div class="eai-root" style="' + st({
+			fontFamily: FONT, fontSize: '13px', color: '#c3d3e6', background: '#101926'
+		}) + '">' +
+			'<div id="eai-log" style="' + st({
+				height: '440px', overflowY: 'auto', background: '#101926', color: '#c3d3e6',
+				padding: '12px 14px', fontFamily: MONO, fontSize: '11.5px',
+				lineHeight: '1.55', boxSizing: 'border-box',
+				'user-select': 'text !important',
+				'-webkit-user-select': 'text !important',
+				cursor: 'text'
+			}) + '"></div>' +
+			'</div>';
+
+		var ctl = EAI.dlg({
+			title: '运行日志',
+			width: 700,
+			height: 540,
+			modal: false,
+			content: html
+		});
+		if (!ctl) return null;
+		UI.dlgLogCtl = ctl;
+		UI.dlgLog = ctl.el;
+		UI.renderLogBuffer();
+		return UI.dlgLog;
+	};
+
+	/** Re-renders the buffered lines (they are kept even before the window opens). */
+	UI.renderLogBuffer = function () {
+		if (!UI.dlgLog) return;
+		var $ = EAI.jq;
+		var box = $('#eai-log', UI.dlgLog);
+		if (!box.length) return;
+		box.empty();
+		logSeq = 0;
+		EAI.logLines.slice(-400).forEach(function (l) { UI.appendLog(l); });
+	};
+
 	/** Swaps the send arrow for a stop square while the agent is running. */
 	UI.setBusy = function (on) {
 		busy = !!on;
@@ -1136,6 +1217,15 @@
 		UI.renderChips();
 
 		UI.appendMsg('user', text || '(图片)');
+
+		/* each submission is self-contained: drop images from earlier turns so a
+		   new symbol can never be built from an old screenshot */
+		history.forEach(function (m) {
+			if (m.content) {
+				m.content = m.content.filter(function (p) { return p.type !== 'image'; });
+			}
+		});
+
 		history.push(userMsg);
 		UI.runAgent(history);
 	};
@@ -1159,7 +1249,11 @@
 					'2. 提到元件时使用准确位号（R12、C3、U1），这样用户能点它定位；',
 					'3. 修改文档前先说明你打算改什么；修改后用简短话语汇报；',
 					'4. 用 Markdown 输出，网表/BOM 用表格；评审结论按「严重 / 一般 / 建议」分级。',
-					'5. 工具调用结束后必须给出**完整**的最终结论；不要只写「接下来将…」就停止。'
+					'5. 工具调用结束后必须给出**完整**的最终结论；不要只写「接下来将…」就停止。',
+					'6. 对话里可能有多张历史图片：生成符号时只使用**当前这条消息**的图片，' +
+					'绝不要把之前会话的图片再做一遍。',
+					'7. create_symbol 一次调用就会画好矩形框、逐个引脚与 c_para 属性，' +
+					'调用后不要再截图核对或反复修正。'
 				].join('\n')
 			}]
 		};
@@ -1268,6 +1362,25 @@
 			'</div>';
 	}
 
+	/** Collapsible section header (used for the rarely edited settings). */
+	function sectionToggle(id, title, hint) {
+		return '<div data-eai-sec="' + id + '" style="' + st({
+			display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 12px',
+			cursor: 'pointer', userSelect: 'none'
+		}) + '">' +
+			'<span data-eai-chev="' + id + '" style="' + st({
+				width: '12px', color: C.muted, fontSize: '11px', flex: '0 0 auto'
+			}) + '">&#9656;</span>' +
+			'<span style="' + st({
+				width: '3px', height: '14px', background: C.primary,
+				borderRadius: '2px', display: 'inline-block', flex: '0 0 auto'
+			}) + '"></span>' +
+			'<span style="' + st({ fontSize: '13px', fontWeight: '600', color: C.primaryDark }) + '">' +
+			title + '</span>' +
+			(hint ? '<span style="' + st({ fontSize: '11px', color: C.muted }) + '">' + hint + '</span>' : '') +
+			'</div>';
+	}
+
 	function sectionTitle(text, hint) {
 		return '<div style="' + st({
 			display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 13px'
@@ -1351,7 +1464,8 @@
 			/* ---------------- generation ---------------- */
 			'<div style="' + st({ height: '1px', background: C.border, margin: '4px 22px 16px' }) + '"></div>' +
 			'<div style="' + st({ padding: '0 22px 2px' }) + '">' +
-			sectionTitle('生成参数') +
+			sectionToggle('params', '生成参数', '默认折叠') +
+			'<div id="eai-sec-body-params" style="display:none">' +
 
 			'<div style="' + st({ display: 'flex', gap: '12px', marginBottom: '13px' }) + '">' +
 			numField('Temperature', 'eai-temp', cfg.temperature, '0.1', '0') +
@@ -1374,11 +1488,13 @@
 				'" placeholder="X-Custom: 1" style="' + inputCss() + '">',
 				'可选，一行一个 Key: Value') +
 			'</div>' +
+			'</div>' +
 
 			/* ---------------- diagnostics ---------------- */
 			'<div style="' + st({ height: '1px', background: C.border, margin: '2px 22px 16px' }) + '"></div>' +
 			'<div style="' + st({ padding: '0 22px 16px' }) + '">' +
-			sectionTitle('诊断', '反馈问题时请附上这段信息') +
+			sectionToggle('diag', '诊断', '反馈问题时请附上这段信息') +
+			'<div id="eai-sec-body-diag" style="display:none">' +
 			'<div id="eai-diag" style="' + st({
 				fontFamily: MONO, fontSize: '11px', background: C.surface,
 				border: '1px solid ' + C.border, borderRadius: '9px', padding: '10px 12px',
@@ -1389,6 +1505,7 @@
 					whiteSpace: 'pre-wrap', wordBreak: 'break-all'
 				}) + '">' + U.esc(l) + '</div>';
 			}).join('') + '</div>' +
+			'</div>' +
 			'</div>' +
 
 			/* ---------------- footer ---------------- */
@@ -1403,6 +1520,7 @@
 			primaryBtn('保存', 'eai-save') +
 			'<button id="eai-test" class="eai-btn" style="' + ghostBtn() + '">测试连接</button>' +
 			'<button id="eai-copy-diag" class="eai-btn" style="' + ghostBtn() + '">复制诊断信息</button>' +
+			'<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除已保存的配置</button>' +
 			'</div></div>' +
 			'</div>';
 
@@ -1443,6 +1561,16 @@
 			try { $('#eai-endpoint', $d).text(EAI.llm.endpoint(collect())); }
 			catch (e) { $('#eai-endpoint', $d).text('-'); }
 		}
+
+		/* collapsible sections */
+		$d.find('[data-eai-sec]').on('click', function () {
+			var id = $(this).attr('data-eai-sec');
+			var body = $('#eai-sec-body-' + id, $d);
+			if (!body.length) return;
+			var open = body.css('display') === 'none';
+			body.css('display', open ? 'block' : 'none');
+			$d.find('[data-eai-chev="' + id + '"]').html(open ? '&#9662;' : '&#9656;');
+		});
 
 		var $note = $('#eai-provider', $d).parent().find('#eai-provider-note');
 		$note.html(noteFor(cfg.provider));
@@ -1506,8 +1634,43 @@
 			}
 		});
 
+		$('#eai-clear-config', $d).on('click', function () {
+			var ok = window.confirm('清除本扩展保存的接口配置（API Key 等）？这不会删除扩展本身。');
+			if (!ok) return;
+			UI.clearConfig();
+			$('#eai-msg', $d).css('color', '#1d7a3e').text('已清除本扩展保存的配置。');
+			$('#eai-baseurl', $d).val('');
+			$('#eai-apikey', $d).val('');
+			$('#eai-model', $d).val('');
+			$('#eai-headers', $d).val('');
+			refreshEndpoint();
+			UI.refreshStatus();
+		});
+
 		refreshEndpoint();
 		return $d;
+	};
+
+	/**
+	 * Removes everything we persist: the per-id localStorage copy and the
+	 * entry inside the editor's extensionConfig.  The editor's own "remove
+	 * extension" action does NOT touch either of them, which is why the key
+	 * survives from one session to the next.
+	 */
+	UI.clearConfig = function () {
+		var defaults = {};
+		Object.keys(EAI.cfgDefaults).forEach(function (k) { defaults[k] = EAI.cfgDefaults[k]; });
+		try {
+			window.localStorage.removeItem('eai.config.v2.' + EAI.discoverExtId());
+		} catch (e) { /* ignore */ }
+		try {
+			var payload = {};
+			payload[EAI.discoverExtId()] = {};
+			payload[EAI.discoverExtId()]['config'] = JSON.stringify(defaults);
+			EAI.api('saveConfig', payload);
+		} catch (e) { /* ignore */ }
+		EAI._cfg = defaults;
+		EAI.log('saved configuration cleared');
 	};
 
 	/* ------------------------------------------------------------ about -- */

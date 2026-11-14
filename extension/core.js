@@ -10,7 +10,13 @@
 (function () {
 	'use strict';
 
-	var EAI = (window.EAI = window.EAI || {});
+	/*
+	 * NOTE: a fresh namespace per extension instance.  Two different extension
+	 * ids are two different instances and both scripts run in the same window;
+	 * sharing one object made the second id read the first one's config,
+	 * conversation and cached extension id.
+	 */
+	var EAI = (window.EAI = {});
 
 	EAI.ver = '0.0.1';   /* fallback — replaced by manifest.version below */
 	EAI.L = typeof Locale !== 'undefined' ? Locale : null;
@@ -210,7 +216,12 @@
 	/* ------------------------------------------------------ config store -- */
 
 	var CFG_STORE_KEY = 'config';
-	var CFG_LOCAL_KEY = 'eai.config.v2';
+	var CFG_LOCAL_PREFIX = 'eai.config.v2.';
+
+	/** localStorage is shared by every extension — namespace it by id. */
+	function localCfgKey() {
+		return CFG_LOCAL_PREFIX + EAI.discoverExtId();
+	}
 
 	EAI.cfgDefaults = {
 		provider: 'openai',
@@ -229,7 +240,7 @@
 		load: function () {
 			var raw = null, c = null;
 			try {
-				raw = window.localStorage.getItem(CFG_LOCAL_KEY);
+				raw = window.localStorage.getItem(localCfgKey());
 				if (raw) c = JSON.parse(raw);
 			} catch (e) { /* ignore */ }
 			if (!c) {
@@ -254,7 +265,7 @@
 		},
 
 		save: function (cfg) {
-			try { window.localStorage.setItem(CFG_LOCAL_KEY, JSON.stringify(cfg)); }
+			try { window.localStorage.setItem(localCfgKey(), JSON.stringify(cfg)); }
 			catch (e) { /* ignore */ }
 			try {
 				var id = EAI.discoverExtId();

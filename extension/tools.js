@@ -448,13 +448,21 @@
 		/* ---------------------------------------------------------------- */
 		{
 			name: 'create_symbol',
-			description: 'Create a schematic symbol (with real pins) and place it. Pins are ' +
-				'given in coordinates relative to the symbol origin; the drawn pin line goes ' +
-				'from the body end to dotX/dotY.',
+			description:
+				'Create a COMPLETE schematic symbol in one call: a body rectangle, one ' +
+				'independent pin per pin, the designator/name annotations, and the library ' +
+				'attributes (name, package, pre, manufacturer part) written into c_para. ' +
+				'Call it ONCE per symbol — do not capture screenshots to verify or repair ' +
+				'it afterwards. Coordinates are relative to the symbol origin; a pin line ' +
+				'runs from the body end (x,y) to (x+dx, y+dy).',
 			parameters: P.obj({
 				name: P.str('Symbol name'),
 				pre: P.str('Designator prefix, e.g. U'),
-				package: P.str('Package name'),
+				package: P.str('Package name, e.g. SSOP-24'),
+				manufacturerPart: P.str('Part number if you can identify it, e.g. HT1621B'),
+				manufacturer: P.str('Optional manufacturer'),
+				supplierPart: P.str('Optional supplier (LCSC) part number'),
+				value: P.str('Optional value text'),
 				x: P.num('Placement x'),
 				y: P.num('Placement y'),
 				pins: {
@@ -474,8 +482,12 @@
 				var err = need(['sch', 'schlib']);
 				if (err) return err;
 				var r = A.createSymbol(args);
-				return r.ok ? ('Symbol "' + args.name + '" created at ' + r.x + ',' + r.y)
-					: ('Failed: ' + r.error);
+				if (!r.ok) return 'Failed: ' + r.error;
+				return 'Symbol "' + r.name + '" created at ' + r.x + ',' + r.y +
+					' · package ' + (r.package || '-') +
+					' · ' + r.pinCount + ' pins + body rectangle' +
+					(r.manufacturerPart ? ' · Manufacturer Part ' + r.manufacturerPart : '') +
+					'. Attributes written to c_para; no screenshot needed.';
 			}
 		}
 	];

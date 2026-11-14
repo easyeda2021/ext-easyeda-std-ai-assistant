@@ -305,6 +305,58 @@
 	 *   texts    [{x, y, string, mark}]                  optional annotations
 	 * @returns {Object} {ok, error}
 	 */
+	/**
+	 * Builds the body rectangle of a symbol from its pin positions.
+	 * The body spans the pin attachment points (p.x / p.y), so a normal
+	 * two-column part gets a rectangle between the two pin columns.
+	 */
+	function bodyRect(spec, ox, oy) {
+		var xs = [], ys = [];
+		(spec.pins || []).forEach(function (p) {
+			var x = Number(p.x), y = Number(p.y);
+			if (isFinite(x)) xs.push(x);
+			if (isFinite(y)) ys.push(y);
+		});
+		if (!xs.length) { xs = [0]; ys = [0]; }
+
+		var minX = Math.min.apply(null, xs);
+		var maxX = Math.max.apply(null, xs);
+		var minY = Math.min.apply(null, ys);
+		var maxY = Math.max.apply(null, ys);
+
+		/* a body needs some area even when all pins sit on one line */
+		if (maxX - minX < 20) {
+			var cx = (minX + maxX) / 2;
+			minX = cx - 20; maxX = cx + 20;
+		}
+		var top = minY - 10;
+		var bottom = maxY + 10;
+		if (bottom - top < 20) {
+			var cy = (minY + maxY) / 2;
+			top = cy - 20; bottom = cy + 20;
+		}
+
+		return {
+			x: minX + ox,
+			y: top + oy,
+			width: maxX - minX,
+			height: bottom - top
+		};
+	}
+
+	/**
+	 * Builds the json cache of a schematic symbol and imports it.
+	 *
+	 * The symbol consists of INDEPENDENT primitives, exactly like a hand made
+	 * library symbol: one `rect` body + one `pin` group per pin + annotations.
+	 *
+	 * @param {Object} spec
+	 *   name / package / pre          library attributes written into c_para
+	 *   manufacturerPart / manufacturer / supplier / supplierPart   optional
+	 *   x, y, rotation                placement
+	 *   pins [{number,name,x,y,dx,dy,dotX,dotY,electric}]
+	 *   texts [{x,y,string,mark}]     extra annotations (value, part number…)
+	 */
 	A.createSymbol = function (spec) {
 		if (!spec || !spec.pins || !spec.pins.length) {
 			return { ok: false, error: 'the symbol needs at least one pin' };
@@ -313,6 +365,19 @@
 		var gid = newId('gge');
 		var originX = spec.x || 0;
 		var originY = spec.y || 0;
+		var kind = EAI.eda.docKind();
+
+		/* ---- library attributes (c_para) -------------------------------- */
+		var para = {
+			name: spec.name || '',
+			package: spec.package || '',
+			pre: spec.pre || 'U'
+		};
+		if (spec.value) para.value = spec.value;
+		if (spec.manufacturerPart) para['Manufacturer Part'] = spec.manufacturerPart;
+		if (spec.manufacturer) para.Manufacturer = spec.manufacturer;
+		if (spec.supplier) para.Supplier = spec.supplier;
+		if (spec.supplierPart) para['Supplier Part'] = spec.supplierPart;
 
 		var block = {
 			head: {
@@ -320,8 +385,7 @@
 				x: originX,
 				y: originY,
 				rotation: spec.rotation || 0,
-				c_para: 'package`' + (spec.package || '') + '`name`' +
-					(spec.name || '') + '`pre`' + (spec.pre || '') + '`',
+				c_para: EAI.eda.jsonToCPara(para),
 				locked: false,
 				puuid: '',
 				uuid: newId('uuid'),
@@ -331,45 +395,66 @@
 				utime: '',
 				add_into_bom: 'yes'
 			},
-			shape: [],
 			itemOrder: [],
+			rect: {},
 			pin: {},
 			annotation: {}
 		};
 
 		var order = [];
 
-		spec.pins.forEach(function (p, i) {
+		/* ---- body rectangle first --------------------------------------- */
+		var rectId = newId('gge');
+		var br = bodyRect(spec, originX, originY);
+		block.rect[rectId] = {
+			gId: rectId,
+			x: br.x,
+			y: br.y,
+			width: br.width,
+			height: br.height,
+			rx: 0,
+			ry: 0,
+			strokeColor: spec.bodyStroke || '#880000',
+			strokeWidth: 1,
+			strokeStyle: 0,
+			fillColor: spec.bodyFill || 'none',
+			locked: false,
+			c_etype: ''
+		};
+		order.push(rectId);
+
+		/* ---- one independent pin per pin -------------------------------- */
+		spec.pins.forEach(function (p) {
 			var pid = newId('gge');
 			block.pin[pid] = buildPin(pid, p, originX, originY);
-			block.shape.push(pid);
 			order.push(pid);
 		});
 
-		/* designator + name annotations */
+		/* ---- designator + name annotations ------------------------------ */
+		var preText = spec.designator || ((spec.pre || 'U') + '?');
 		var preAnn = {
-			mark: 'P', string: spec.pre || 'U',
-			x: spec.preX === undefined ? 0 : spec.preX,
-			y: spec.preY === undefined ? -20 : spec.preY,
+			mark: 'P', string: preText,
+			x: spec.preX === undefined ? br.x - originX + 4 : spec.preX,
+			y: spec.preY === undefined ? br.y - originY - 4 : spec.preY,
 			visible: spec.showPre !== false
 		};
 		var nameAnn = {
 			mark: 'N', string: spec.name || '',
-			x: spec.nameX === undefined ? 0 : spec.nameX,
-			y: spec.nameY === undefined ? -32 : spec.nameY,
-			visible: spec.showName !== false
+			x: spec.nameX === undefined ? br.x - originX + 4 : spec.nameX,
+			y: spec.nameY === undefined ? br.y - originY + br.height + 12 : spec.nameY,
+			visible: spec.showName !== false && !!spec.name
 		};
 		var aid1 = newId('gge');
 		block.annotation[aid1] = buildAnnotation(aid1, preAnn, originX, originY);
-		block.shape.push(aid1); order.push(aid1);
+		order.push(aid1);
 		var aid2 = newId('gge');
 		block.annotation[aid2] = buildAnnotation(aid2, nameAnn, originX, originY);
-		block.shape.push(aid2); order.push(aid2);
+		order.push(aid2);
 
 		(spec.texts || []).forEach(function (t) {
 			var tid = newId('gge');
 			block.annotation[tid] = buildAnnotation(tid, t, originX, originY);
-			block.shape.push(tid); order.push(tid);
+			order.push(tid);
 		});
 
 		block.itemOrder = order;
@@ -384,7 +469,35 @@
 		} catch (e) {
 			return { ok: false, error: 'importing the symbol failed: ' + e };
 		}
-		return { ok: true, gId: gid, x: originX, y: originY };
+
+		/*
+		 * In a symbol-library document the library attributes live in the
+		 * DOCUMENT head c_para (that is what the library tree shows), and the
+		 * import path does not copy the component's c_para there.  Write them
+		 * explicitly.
+		 */
+		if (kind === 'schlib') {
+			var docPara = {};
+			Object.keys(para).forEach(function (k) {
+				if (para[k] !== '' && para[k] !== undefined) docPara[k] = para[k];
+			});
+			Object.keys(docPara).forEach(function (k) {
+				try { EAI.eda.editorCall('setCustomPara', [k, docPara[k]]); }
+				catch (e) { EAI.log('setCustomPara(' + k + ') failed: ' + e, 'error'); }
+			});
+		}
+
+		return {
+			ok: true,
+			gId: gid,
+			x: originX,
+			y: originY,
+			name: para.name,
+			package: para.package,
+			manufacturerPart: para['Manufacturer Part'] || '',
+			pinCount: spec.pins.length,
+			hasBody: true
+		};
 	};
 
 	/* ------------------------------------------------- standard part kit -- */
