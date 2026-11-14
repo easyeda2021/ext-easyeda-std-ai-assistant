@@ -427,90 +427,81 @@
 			});
 		}
 
-		/* dragging by the title bar */
-		(function enableDrag() {
-			var dragging = false, startX = 0, startY = 0;
-			var pos = { left: null, top: null };
+		/* ---- move + resize ------------------------------------------------
+		 * Listeners live in the CAPTURE phase on window: the editor's own
+		 * handlers call stopPropagation() on mouseup, which used to leave a
+		 * drag stuck (the "release is broken" bug).
+		 */
+		function beginDrag(mode, e) {
+			if (e.button) return;
+			e.preventDefault();
+			e.stopPropagation();
 
-			head.on('mousedown', function (e) {
-				if ($(e.target).is('.eai-window-x')) return;
-				dragging = true;
-				var rect = card[0].getBoundingClientRect();
-				pos.left = rect.left;
-				pos.top = rect.top;
-				startX = e.clientX;
-				startY = e.clientY;
-				root.css({ display: 'block', padding: '0' });
-				card.css({ position: 'fixed', margin: '0' });
-				e.preventDefault();
+			/* keep the mask exactly as it is — switching it to block made the
+			   card jump to the left for a frame on the very first drag */
+			var rect = card[0].getBoundingClientRect();
+			card.css({
+				position: 'fixed', margin: '0',
+				left: rect.left + 'px', top: rect.top + 'px',
+				width: rect.width + 'px', height: rect.height + 'px'
 			});
 
-			$(document).on('mousemove.eaidrag', function (e) {
-				if (!dragging) return;
-				var w = card[0].offsetWidth || width;
-				var h = card[0].offsetHeight || height;
+			var startX = e.clientX, startY = e.clientY;
+			var startL = rect.left, startT = rect.top;
+			var startW = rect.width, startH = rect.height;
+
+			function onMove(ev) {
 				var vw = window.innerWidth || 1200;
 				var vh = window.innerHeight || 800;
-				/* never let the window be dragged completely off screen */
-				var left = Math.min(Math.max(-w + 80, pos.left + e.clientX - startX), vw - 80);
-				var top = Math.min(Math.max(0, pos.top + e.clientY - startY), vh - 42);
-				card.css({ left: left + 'px', top: top + 'px' });
-			}).on('mouseup.eaidrag', function () {
-				dragging = false;
-			});
-		})();
 
-		/* ---- drag the edges to resize ---------------------------------- */
-		if (opts.resizable !== false) {
-			function startResize(mode) {
-				return function (e) {
-					e.preventDefault();
-					e.stopPropagation();
-					var rect = card[0].getBoundingClientRect();
+				if (mode === 'move') {
+					var left = Math.min(Math.max(-startW + 80, startL + ev.clientX - startX), vw - 80);
+					var top = Math.min(Math.max(0, startT + ev.clientY - startY), vh - 42);
+					card[0].style.left = left + 'px';
+					card[0].style.top = top + 'px';
+					return;
+				}
 
-					/* pin the card where it is so the left/top edge stays put */
-					root.css({ display: 'block', padding: '0' });
-					card.css({
-						position: 'fixed', margin: '0',
-						left: rect.left + 'px', top: rect.top + 'px',
-						width: rect.width + 'px', height: rect.height + 'px'
-					});
-
-					var sw = rect.width, sh = rect.height;
-					var sx = e.clientX, sy = e.clientY;
-					$(document).off('.eairesizeDlg');
-
-					$(document).on('mousemove.eairesizeDlg', function (ev) {
-						var maxW = Math.max(360, (window.innerWidth || 1200) - rect.left - 10);
-						var maxH = Math.max(240, (window.innerHeight || 800) - rect.top - 10);
-						if (mode !== 'b') {
-							var w = Math.max(380, Math.min(maxW, sw + ev.clientX - sx));
-							card.css('width', w + 'px');
-						}
-						if (mode !== 'r') {
-							var h = Math.max(260, Math.min(maxH, sh + ev.clientY - sy));
-							card.css('height', h + 'px');
-						}
-					}).on('mouseup.eairesizeDlg', function () {
-						$(document).off('.eairesizeDlg');
-						try {
-							if (opts.onResize) opts.onResize(card[0].offsetWidth, card[0].offsetHeight);
-						} catch (err) { /* ignore */ }
-					});
-				};
+				var maxW = Math.max(380, vw - startL - 10);
+				var maxH = Math.max(260, vh - startT - 10);
+				if (mode !== 'b') {
+					card[0].style.width = Math.max(380, Math.min(maxW, startW + ev.clientX - startX)) + 'px';
+				}
+				if (mode !== 'r') {
+					card[0].style.height = Math.max(260, Math.min(maxH, startH + ev.clientY - startY)) + 'px';
+				}
 			}
 
-			var gripR = $('<div>').attr('style',
-				'position:absolute;top:0;right:0;width:6px;height:100%;cursor:ew-resize;z-index:5');
-			var gripB = $('<div>').attr('style',
-				'position:absolute;left:0;bottom:0;height:6px;width:100%;cursor:ns-resize;z-index:5');
-			var gripC = $('<div>').attr('style',
-				'position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:6' +
-				';background:linear-gradient(135deg,transparent 50%,#c9d4e4 50%);border-radius:0 0 6px 0');
-			card.append(gripR).append(gripB).append(gripC);
-			gripR.on('mousedown', startResize('r'));
-			gripB.on('mousedown', startResize('b'));
-			gripC.on('mousedown', startResize('both'));
+			function onUp() {
+				window.removeEventListener('mousemove', onMove, true);
+				window.removeEventListener('mouseup', onUp, true);
+				if (mode !== 'move') {
+					try {
+						if (opts.onResize) opts.onResize(card[0].offsetWidth, card[0].offsetHeight);
+					} catch (err) { /* ignore */ }
+				}
+			}
+
+			window.addEventListener('mousemove', onMove, true);
+			window.addEventListener('mouseup', onUp, true);
+		}
+
+		head.on('mousedown', function (e) {
+			if ($(e.target).is('.eai-window-x')) return;
+			beginDrag('move', e);
+		});
+
+		if (opts.resizable !== false) {
+			[
+				['r', 'position:absolute;top:0;right:0;width:6px;height:100%;cursor:ew-resize;z-index:5'],
+				['b', 'position:absolute;left:0;bottom:0;height:6px;width:100%;cursor:ns-resize;z-index:5'],
+				['both', 'position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:6;' +
+					'background:linear-gradient(135deg,transparent 50%,#c9d4e4 50%);border-radius:0 0 6px 0']
+			].forEach(function (g) {
+				var grip = $('<div>').attr('style', g[1]);
+				card.append(grip);
+				grip.on('mousedown', function (e) { beginDrag(g[0], e); });
+			});
 		}
 
 		/* ESC closes the newest dialog */

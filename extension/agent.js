@@ -287,10 +287,6 @@
 			});
 		}
 
-		list.push({
-			id: 'free', label: '自由提问', icon: '💬',
-			prompt: ''
-		});
 
 		return list;
 	};

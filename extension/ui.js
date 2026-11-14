@@ -122,7 +122,7 @@
 				boxSizing: 'border-box', border: 'none', borderRadius: '12px',
 				padding: '9px 46px 32px 11px', fontSize: '12.5px', fontFamily: FONT,
 				color: C.text, outline: 'none', resize: 'none', lineHeight: '1.5',
-				background: 'transparent', display: 'block'
+				background: 'transparent', display: 'block', overflowY: 'auto'
 			}) + '" placeholder="描述需求，或点胶囊按钮填入提示词…&#10;Ctrl + Enter 发送 · 可粘贴图片"></textarea>' +
 
 			'  <div style="' + st({
@@ -260,7 +260,7 @@
 
 		var ctl = EAI.dlg({
 			title: U.t('eai.panel.title', 'AI 助手'),
-			width: 600,
+			width: 400,
 			height: 640,
 			modal: false,
 			content: panelHtml()
@@ -628,9 +628,12 @@
 		var el = ta[0];
 		var lineH = 18.75;                       /* 12.5px × 1.5 line-height */
 		var maxText = Math.round(lineH * 6) + 4; /* 6 lines */
+
+		/* measure the wrapped content, then let the textarea fill the box
+		   again — pinning its height left dead space under the text */
 		el.style.height = 'auto';
 		var textH = Math.min(Math.max(el.scrollHeight, lineH), maxText);
-		el.style.height = textH + 'px';
+		el.style.height = '';
 
 		var boxH = textH + 40;                   /* + bottom overlay area */
 		boxH = Math.min(Math.max(boxH, 84), 158);
