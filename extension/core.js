@@ -498,7 +498,9 @@
 
 		/* the editor disables text selection globally; turn it back on for
 		   the dialog content so the log / report can be copied */
-		var bodyCss = 'flex:1 1 auto;overflow:auto;position:relative;min-height:0;' +
+		/* overflow-x is hidden on purpose: a horizontal scrollbar would sit
+		   exactly over the bottom resize grip and swallow the drag */
+		var bodyCss = 'flex:1 1 auto;overflow-y:auto;overflow-x:hidden;position:relative;min-height:0;' +
 			'user-select:text !important;-webkit-user-select:text !important;cursor:auto';
 
 		var root = $('<div>').attr('style', maskCss).attr('class', 'eai-mask');
@@ -583,25 +585,34 @@
 			var startL = rect.left, startT = rect.top;
 			var startW = rect.width, startH = rect.height;
 
+			/* the offsets are tiny and glitchy on some high-DPI setups; keep a
+			   small dead zone on the first pixels of a resize */
+			var MIN_W = 380, MIN_H = 260;
+
 			function onMove(ev) {
 				var vw = window.innerWidth || 1200;
 				var vh = window.innerHeight || 800;
+				var el = card[0];
 
 				if (mode === 'move') {
 					var left = Math.min(Math.max(-startW + 80, startL + ev.clientX - startX), vw - 80);
 					var top = Math.min(Math.max(0, startT + ev.clientY - startY), vh - 42);
-					card[0].style.left = left + 'px';
-					card[0].style.top = top + 'px';
+					el.style.left = left + 'px';
+					el.style.top = top + 'px';
 					return;
 				}
 
-				var maxW = Math.max(380, vw - startL - 10);
-				var maxH = Math.max(260, vh - startT - 10);
+				/* absolute sizes from the pinned top/left corner — no drift, and
+				   the result never depends on the previous size */
 				if (mode !== 'b') {
-					card[0].style.width = Math.max(380, Math.min(maxW, startW + ev.clientX - startX)) + 'px';
+					var w = ev.clientX - startL;
+					w = Math.max(MIN_W, Math.min(vw - startL - 10, w));
+					el.style.width = w + 'px';
 				}
 				if (mode !== 'r') {
-					card[0].style.height = Math.max(260, Math.min(maxH, startH + ev.clientY - startY)) + 'px';
+					var h = ev.clientY - startT;
+					h = Math.max(MIN_H, Math.min(vh - startT - 10, h));
+					el.style.height = h + 'px';
 				}
 			}
 
@@ -628,9 +639,9 @@
 
 		if (opts.resizable !== false) {
 			[
-				['r', 'position:absolute;top:0;right:0;width:6px;height:100%;cursor:ew-resize;z-index:5'],
-				['b', 'position:absolute;left:0;bottom:0;height:6px;width:100%;cursor:ns-resize;z-index:5'],
-				['both', 'position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:6;' +
+				['r', 'position:absolute;top:0;right:0;width:7px;height:100%;cursor:ew-resize;z-index:20'],
+				['b', 'position:absolute;left:0;bottom:0;height:8px;width:100%;cursor:ns-resize;z-index:20'],
+				['both', 'position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:21;' +
 					'background:linear-gradient(135deg,transparent 50%,#c9d4e4 50%);border-radius:0 0 6px 0']
 			].forEach(function (g) {
 				var grip = $('<div>').attr('style', g[1]);
