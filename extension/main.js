@@ -1,11 +1,10 @@
 /* =====================================================================
- * EasyEDA Std extension — "AI Assistant"
+ * EasyEDA Std extension — "AI Assistant" / AI 助手
  * main.js — bootstrap: menu entries, toolbar button and commands
  *
- * A Std extension is activated from
- *   高级 > 扩展 > 扩展配置  (Advanced > Extension > Extension configuration)
- * and it gets its own id from the installer.  Every command therefore has
- * to be named "extension-<id>-<command>".
+ * The Std client appends extension menus directly to 「高级」, so a plain
+ * flat list would bury the design flow.  Everything therefore lives in a
+ * single nested entry:     高级 ▸ AI 助手 ▸ { AI 助手…, 设置…, 关于… }
  * ===================================================================== */
 (function () {
 	'use strict';
@@ -14,167 +13,81 @@
 	var U = EAI.util;
 
 	if (!EAI.api) {
-		EAI.log('the extension API is not available — aborting', 'error');
+		try { console.error('[EAI] the extension API is not available'); } catch (e) { /* ignore */ }
 		return;
 	}
 
 	var extId = EAI.discoverExtId();
-	EAI.log('AI Assistant ' + EAI.ver + ' starting (id=' + extId + ')');
+	EAI.log('AI 助手 ' + EAI.ver + ' starting (id=' + extId + ')');
 
-	/* --------------------------------------------------------- commands -- */
+	/* ------------------------------------------------------------ commands -- */
 
-	function needDoc(types) {
-		var dt = EAI.eda.docType();
-		if (!dt) {
-			EAI.toast(U.t('eai.hint.noDoc', 'Please open a schematic or a PCB first.'), 'warn');
-			return null;
+	var CMD = {
+		panel: function () {
+			EAI.log('command: open panel');
+			EAI.ui.openPanel();
+		},
+		settings: function () {
+			EAI.log('command: open settings');
+			EAI.ui.openSettings();
+		},
+		about: function () {
+			EAI.log('command: open about');
+			EAI.ui.openAbout();
 		}
-		if (types && types.indexOf(dt) < 0) {
-			EAI.toast('This action needs an open ' + types.join(' / ') + ' document.', 'warn');
-			return null;
-		}
-		return dt;
-	}
-
-	function cmdPanel() {
-		EAI.ui.openPanel();
-	}
-
-	function cmdSettings() {
-		EAI.ui.openSettings();
-	}
-
-	function cmdReview() {
-		if (!needDoc(null)) return;
-		EAI.ui.openPanel();
-		EAI.ui.runAction('review');
-	}
-
-	function cmdBom() {
-		if (!needDoc(null)) return;
-		EAI.ui.openPanel();
-		EAI.ui.runAction('bom');
-	}
-
-	function cmdSnapshot() {
-		if (!needDoc(null)) return;
-		EAI.ui.openPanel();
-		EAI.ui.runAction('snapshot');
-	}
-
-	function cmdEdit() {
-		if (!needDoc(null)) return;
-		EAI.ui.openPanel();
-		EAI.ui.runAction('edit');
-	}
-
-	function cmdGenerate() {
-		if (!needDoc(null)) return;
-		EAI.ui.openPanel();
-		EAI.ui.runAction('generate');
-	}
-
-	function cmdSymbol() {
-		if (!needDoc(null)) return;
-		EAI.ui.openPanel();
-		EAI.ui.runAction('symbol');
-	}
-
-	function cmdAbout() {
-		var cfg = EAI.cfg.current();
-		EAI.toast('AI Assistant v' + EAI.ver + '\n' +
-			'protocol: ' + cfg.provider + '\n' +
-			'model: ' + (cfg.model || '-') + '\n' +
-			'endpoint: ' + (cfg.baseUrl || '-'));
-	}
+	};
 
 	var commands = {};
-	commands[EAI.cmd('panel')] = cmdPanel;
-	commands[EAI.cmd('settings')] = cmdSettings;
-	commands[EAI.cmd('review')] = cmdReview;
-	commands[EAI.cmd('bom')] = cmdBom;
-	commands[EAI.cmd('snapshot')] = cmdSnapshot;
-	commands[EAI.cmd('edit')] = cmdEdit;
-	commands[EAI.cmd('generate')] = cmdGenerate;
-	commands[EAI.cmd('symbol')] = cmdSymbol;
-	commands[EAI.cmd('about')] = cmdAbout;
+	Object.keys(CMD).forEach(function (k) {
+		commands[EAI.cmd(k)] = CMD[k];
+	});
 
 	try {
 		EAI.api('createCommand', commands);
+		EAI.log('commands registered: ' + Object.keys(commands).join(', '));
 	} catch (e) {
-		EAI.log('createCommand failed: ' + e, 'error');
+		EAI.log('createCommand failed: ' + (e && e.message ? e.message : e), 'error');
 	}
 
-	/* ------------------------------------------------------------ menus -- */
+	/* --------------------------------------------------------------- menu -- */
 
-	function label(key, fallback) { return U.t(key, fallback); }
-
-	var menuItems = [
-		{
-			text: label('eai.menu.settings', 'AI Settings...'),
-			fordoctype: 'all',
-			cmd: EAI.cmd('settings')
-		},
-		{
-			text: label('eai.menu.review', 'AI Schematic Review (Netlist)'),
-			fordoctype: 'sch',
-			cmd: EAI.cmd('review')
-		},
-		{
-			text: label('eai.menu.bom', 'AI BOM Analysis'),
-			fordoctype: 'sch,pcb',
-			cmd: EAI.cmd('bom')
-		},
-		{
-			text: label('eai.menu.snapshot', 'AI Snapshot Review'),
-			fordoctype: 'sch,pcb',
-			cmd: EAI.cmd('snapshot')
-		},
-		{
-			text: label('eai.menu.edit', 'AI Batch Edit (Value / Designator)'),
-			fordoctype: 'sch',
-			cmd: EAI.cmd('edit')
-		},
-		{
-			text: label('eai.menu.generate', 'AI Generate Schematic'),
-			fordoctype: 'sch',
-			cmd: EAI.cmd('generate')
-		},
-		{
-			text: label('eai.menu.symbol', 'AI Symbol from Image'),
-			fordoctype: 'sch,schlib',
-			cmd: EAI.cmd('symbol')
-		},
-		{
-			text: label('eai.menu.about', 'About AI Assistant'),
-			fordoctype: 'all',
-			cmd: EAI.cmd('about')
-		}
+	var submenu = [
+		{ text: 'AI 助手…', cmd: EAI.cmd('panel') },
+		{ text: '设置…', cmd: EAI.cmd('settings') },
+		{ text: '关于…', cmd: EAI.cmd('about') }
 	];
 
 	try {
-		EAI.api('createExtensionMenu', menuItems);
+		EAI.api('createExtensionMenu', [{
+			text: 'AI 助手',
+			fordoctype: 'all',
+			submenu: submenu
+		}]);
+		EAI.log('menu registered under 高级 ▸ AI 助手');
 	} catch (e) {
-		EAI.log('createExtensionMenu failed: ' + e, 'error');
+		EAI.log('createExtensionMenu failed: ' + (e && e.message ? e.message : e), 'error');
 	}
 
-	/* ----------------------------------------------------- toolbar button */
+	/* ------------------------------------------------------ toolbar button -- */
 
 	try {
-		var icon = EAI.api('getRes', 'icon.svg');
+		var icon = '';
+		try { icon = EAI.api('getRes', 'icon.svg') || ''; } catch (e) { /* ignore */ }
+
 		EAI.api('createToolbarButton', {
-			icon: icon || '',
-			title: 'AI Assistant',
-			text: 'AI',
-			fordoctype: 'sch,pcb',
+			icon: icon,
+			title: 'AI 助手',
+			text: 'AI助手',
+			fordoctype: 'sch,pcb,schlib,pcblib',
 			cmd: EAI.cmd('panel'),
-			menu: menuItems
+			menu: submenu
 		});
+		EAI.log('toolbar button registered');
 	} catch (e) {
-		EAI.log('createToolbarButton failed: ' + e, 'error');
+		EAI.log('createToolbarButton failed: ' + (e && e.message ? e.message : e), 'error');
 	}
 
-	/* ------------------------------------------------------------- done -- */
-
-	EAI.log('AI Assistant ready.');
+	EAI.log('AI 助手 ready.');
+	/* drop the full diagnostics into the log so a failing install is obvious */
+	EAI.log('\n' + EAI.diagnostics());
 })();

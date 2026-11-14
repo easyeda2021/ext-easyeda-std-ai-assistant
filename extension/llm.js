@@ -385,4 +385,265 @@
 			return 'ok: ' + String(t).slice(0, 120);
 		});
 	};
+
+	/* =====================================================================
+	 * Tool calling (used by the agent loop)
+	 *
+	 * Internal message shapes, extended for tools:
+	 *   { role:'assistant', content:[{type:'text'}], toolCalls:[{id,name,args}] }
+	 *   { role:'tool', toolCallId, name, content:'<string>' }
+	 * ===================================================================== */
+
+	function toOpenAITools(messages) {
+		var s = splitSystem(messages), out = [];
+		if (s.system) out.push({ role: 'system', content: s.system });
+
+		s.messages.forEach(function (m) {
+			if (m.role === 'tool') {
+				out.push({
+					role: 'tool',
+					tool_call_id: m.toolCallId,
+					content: typeof m.content === 'string' ? m.content : U_str(m.content)
+				});
+				return;
+			}
+
+			var parts = (m.content || []).map(function (p) {
+				if (p.type === 'image') {
+					return {
+						type: 'image_url',
+						image_url: { url: 'data:' + (p.mediaType || 'image/png') + ';base64,' + p.data }
+					};
+				}
+				return { type: 'text', text: p.text || '' };
+			});
+
+			var msg = { role: m.role === 'assistant' ? 'assistant' : 'user' };
+
+			if (parts.length && parts.every(function (p) { return p.type === 'text'; })) {
+				msg.content = parts.map(function (p) { return p.text; }).join('\n');
+			} else if (parts.length) {
+				msg.content = parts;
+			} else {
+				msg.content = '';
+			}
+
+			if (m.toolCalls && m.toolCalls.length) {
+				msg.tool_calls = m.toolCalls.map(function (t) {
+					return {
+						id: t.id,
+						type: 'function',
+						function: {
+							name: t.name,
+							arguments: typeof t.args === 'string' ? t.args : JSON.stringify(t.args || {})
+						}
+					};
+				});
+			}
+			out.push(msg);
+		});
+		return out;
+	}
+
+	function toAnthropicTools(messages) {
+		var s = splitSystem(messages), out = [];
+
+		s.messages.forEach(function (m) {
+			if (m.role === 'tool') {
+				out.push({
+					role: 'user',
+					content: [{
+						type: 'tool_result',
+						tool_use_id: m.toolCallId,
+						content: typeof m.content === 'string' ? m.content : U_str(m.content)
+					}]
+				});
+				return;
+			}
+
+			var parts = (m.content || []).map(function (p) {
+				if (p.type === 'image') {
+					return {
+						type: 'image',
+						source: {
+							type: 'base64',
+							media_type: p.mediaType || 'image/png',
+							data: p.data
+						}
+					};
+				}
+				return { type: 'text', text: p.text || '' };
+			});
+
+			if (m.toolCalls && m.toolCalls.length) {
+				m.toolCalls.forEach(function (t) {
+					parts.push({
+						type: 'tool_use',
+						id: t.id,
+						name: t.name,
+						input: (typeof t.args === 'string') ? safeJson(t.args) : (t.args || {})
+					});
+				});
+			}
+			if (!parts.length) return;
+
+			/* Anthropic requires alternating roles; merge consecutive ones */
+			var last = out[out.length - 1];
+			if (last && last.role === m.role) {
+				last.content = last.content.concat(parts);
+			} else {
+				out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: parts });
+			}
+		});
+		return out;
+	}
+
+	function U_str(v) {
+		try { return typeof v === 'string' ? v : JSON.stringify(v); }
+		catch (e) { return String(v); }
+	}
+
+	function safeJson(s) {
+		try { return JSON.parse(s); }
+		catch (e) { return { __raw: s }; }
+	}
+
+	/**
+	 * One non-streaming round trip with tools.
+	 * @returns {Promise<{text:string, toolCalls:Array, finish:string}>}
+	 */
+	L.chatTools = function (cfg, messages, tools, opts) {
+		opts = opts || {};
+		var provider = cfg.provider === 'anthropic' ? 'anthropic' : 'openai';
+		var headers = { 'Content-Type': 'application/json' };
+		var extra = parseExtraHeaders(cfg);
+		for (var k in extra) {
+			if (Object.prototype.hasOwnProperty.call(extra, k)) headers[k] = extra[k];
+		}
+
+		var body;
+		if (provider === 'anthropic') {
+			headers['x-api-key'] = cfg.apiKey;
+			headers['anthropic-version'] = headers['anthropic-version'] || '2023-06-01';
+			body = {
+				model: cfg.model,
+				max_tokens: Number(cfg.maxTokens) || 8192,
+				messages: toAnthropicTools(messages),
+				tools: (tools || []).map(function (t) {
+					return {
+						name: t.name,
+						description: t.description,
+						input_schema: t.parameters || { type: 'object', properties: {} }
+					};
+				})
+			};
+			var sys = splitSystem(messages).system;
+			if (sys) body.system = sys;
+			if (cfg.temperature !== undefined && cfg.temperature !== null && cfg.temperature !== '') {
+				body.temperature = Number(cfg.temperature);
+			}
+		} else {
+			headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+			body = {
+				model: cfg.model,
+				messages: toOpenAITools(messages),
+				tools: (tools || []).map(function (t) {
+					return {
+						type: 'function',
+						function: {
+							name: t.name,
+							description: t.description,
+							parameters: t.parameters || { type: 'object', properties: {} }
+						}
+					};
+				})
+			};
+			if (cfg.temperature !== undefined && cfg.temperature !== null && cfg.temperature !== '') {
+				body.temperature = Number(cfg.temperature);
+			}
+			if (cfg.__useMaxCompletionTokens) {
+				body.max_completion_tokens = Number(cfg.maxTokens) || 8192;
+			} else if (cfg.maxTokens) {
+				body.max_tokens = Number(cfg.maxTokens);
+			}
+		}
+
+		var url = L.endpoint(cfg);
+		var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+		var timeout = (Number(cfg.timeout) || 300) * 1000;
+		var timer = controller ? setTimeout(function () { controller.abort(); }, timeout) : null;
+
+		function clear() { if (timer) clearTimeout(timer); }
+
+		return fetch(url, {
+			method: 'POST',
+			headers: headers,
+			body: JSON.stringify(body),
+			signal: controller ? controller.signal : undefined
+		}).then(function (resp) {
+			return resp.text().then(function (t) {
+				if (!resp.ok) {
+					var msg = 'HTTP ' + resp.status + ' ' + resp.statusText;
+					try {
+						var j = JSON.parse(t);
+						if (j.error) msg += ' — ' + (j.error.message || j.error.type || '');
+					} catch (e) {
+						msg += ' — ' + t.slice(0, 300);
+					}
+					var err = new Error(msg);
+					err.status = resp.status;
+					throw err;
+				}
+				var obj;
+				try { obj = JSON.parse(t); }
+				catch (e) { throw new Error('Invalid JSON response: ' + t.slice(0, 300)); }
+
+				var out = { text: '', toolCalls: [], finish: '' };
+
+				if (provider === 'anthropic') {
+					(obj.content || []).forEach(function (c) {
+						if (!c) return;
+						if (c.type === 'text') out.text += c.text || '';
+						else if (c.type === 'tool_use') {
+							out.toolCalls.push({ id: c.id, name: c.name, args: c.input || {} });
+						}
+					});
+					out.finish = obj.stop_reason || '';
+				} else {
+					var ch = (obj.choices && obj.choices[0]) || {};
+					var m = ch.message || {};
+					out.text = typeof m.content === 'string' ? m.content : '';
+					if (Array.isArray(m.content)) {
+						m.content.forEach(function (p) {
+							if (p && p.type === 'text') out.text += p.text || '';
+						});
+					}
+					(m.tool_calls || []).forEach(function (tc) {
+						var fn = tc.function || {};
+						out.toolCalls.push({
+							id: tc.id,
+							name: fn.name,
+							args: safeJson(fn.arguments || '{}')
+						});
+					});
+					out.finish = ch.finish_reason || '';
+				}
+				return out;
+			});
+		}).then(function (r) {
+			clear();
+			return r;
+		}).catch(function (err) {
+			clear();
+			if (err && err.name === 'AbortError') {
+				throw new Error('Request aborted / timed out after ' + Math.round(timeout / 1000) + 's');
+			}
+			if (err && err instanceof TypeError) {
+				var e2 = new Error('Network request failed (possibly blocked by CORS). Original: ' + err.message);
+				e2.isCors = true;
+				throw e2;
+			}
+			throw err;
+		});
+	};
 })();

@@ -1,6 +1,14 @@
 /* =====================================================================
- * EasyEDA Std extension — "AI Assistant"
- * ui.js — settings dialog, AI panel, report rendering and the features
+ * EasyEDA Std extension — "AI Assistant" / AI 助手
+ * ui.js — AI panel, settings dialog and about dialog
+ *
+ * NOTE ON STYLING
+ *   The dialogs are created by api('createDialog') and rendered inside the
+ *   editor's own DOM.  A stylesheet injected into <head> was not reliable
+ *   there, so every structural/visual rule below is written as an INLINE
+ *   style (the editor itself styles its UI that way, so inline styles are
+ *   guaranteed to work).  A small <style> block is still shipped for
+ *   :hover / transitions / markdown fallbacks only.
  * ===================================================================== */
 (function () {
 	'use strict';
@@ -9,83 +17,119 @@
 	var UI = (EAI.ui = {});
 	var U = EAI.util;
 
-	var dlgPanel = null, dlgSettings = null;
-	var history = [];          /* conversation for the current session */
-	var lastReport = '';       /* markdown of the last report          */
-	var pendingImage = null;   /* {dataUrl, base64, mediaType}         */
+	UI.dlgPanel = null;
+	UI.dlgSettings = null;
+	UI.dlgAbout = null;
+	UI.dlgReport = null;
 
-	/* ------------------------------------------------------------- style -- */
+	var history = [];
+	var lastReport = '';
+	var pendingImage = null;
+	var busy = false;
 
-	var CSS = [
-		'.eai-root{font-family:"Microsoft YaHei",Segoe UI,Verdana,sans-serif;font-size:13px;color:#222;}',
-		'.eai-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f3f6fb;border-bottom:1px solid #dfe6f0;flex-wrap:wrap;}',
-		'.eai-bar .eai-status{color:#5a6b85;font-size:12px;}',
-		'.eai-actions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid #e6ebf3;background:#fbfcfe;}',
-		'.eai-actions a.eai-btn{display:inline-block;padding:4px 10px;border:1px solid #c6d3e6;border-radius:3px;',
-		'	background:#fff;color:#1e3a68;text-decoration:none;cursor:pointer;font-size:12px;}',
-		'.eai-actions a.eai-btn:hover{background:#e8f0fb;border-color:#8fb0dd;}',
-		'.eai-tabs{display:flex;gap:2px;padding:6px 10px 0;background:#f3f6fb;border-bottom:1px solid #dfe6f0;}',
-		'.eai-tabs a.eai-tab{padding:5px 14px;border:1px solid #dfe6f0;border-bottom:none;border-radius:3px 3px 0 0;',
-		'	background:#e9eef6;color:#40536f;text-decoration:none;cursor:pointer;font-size:12px;}',
-		'.eai-tabs a.eai-tab.eai-active{background:#fff;color:#1e3a68;font-weight:bold;}',
-		'.eai-pane{display:none;padding:10px;}',
-		'.eai-pane.eai-active{display:block;}',
-		'.eai-chat{height:250px;overflow:auto;border:1px solid #dfe6f0;border-radius:3px;background:#fff;padding:8px;}',
-		'.eai-msg{margin:0 0 8px;padding:6px 8px;border-radius:4px;white-space:pre-wrap;word-break:break-word;}',
-		'.eai-msg.eai-user{background:#eaf2ff;border:1px solid #cfe0fb;}',
-		'.eai-msg.eai-ai{background:#f6f8fb;border:1px solid #e4e9f1;}',
-		'.eai-msg.eai-sys{background:#fff6e5;border:1px solid #f0dcb0;color:#7a5b16;}',
-		'.eai-msg.eai-err{background:#fdecec;border:1px solid #f2c2c2;color:#932626;}',
-		'.eai-msg .eai-role{display:block;font-size:11px;color:#7b8aa3;margin-bottom:3px;}',
-		'.eai-input{display:flex;gap:6px;margin-top:8px;}',
-		'.eai-input textarea{flex:1;height:56px;resize:vertical;border:1px solid #cfd9e8;border-radius:3px;padding:6px;',
-		'	font-family:Consolas,Monaco,monospace;font-size:12px;}',
-		'.eai-input button{padding:0 16px;border:1px solid #2f6fbf;background:#2f6fbf;color:#fff;border-radius:3px;cursor:pointer;}',
-		'.eai-input button:hover{background:#255a9e;}',
-		'.eai-input button:disabled{background:#a9bfdc;border-color:#a9bfdc;cursor:default;}',
-		'.eai-report{height:330px;overflow:auto;border:1px solid #dfe6f0;border-radius:3px;background:#fff;padding:10px;}',
-		'.eai-report h1{font-size:17px;border-bottom:1px solid #e6ebf3;padding-bottom:5px;margin-top:4px;}',
-		'.eai-report h2{font-size:15px;margin-top:16px;color:#1e3a68;}',
-		'.eai-report h3{font-size:13px;margin-top:12px;color:#33517f;}',
-		'.eai-report table{border-collapse:collapse;margin:8px 0;font-size:12px;width:100%;}',
-		'.eai-report th,.eai-report td{border:1px solid #dde4ee;padding:4px 7px;text-align:left;vertical-align:top;}',
-		'.eai-report th{background:#f2f6fb;}',
-		'.eai-report code{background:#f2f4f8;padding:1px 4px;border-radius:2px;font-family:Consolas,monospace;}',
-		'.eai-report pre{background:#f6f8fb;border:1px solid #e4e9f1;padding:8px;border-radius:3px;overflow:auto;}',
-		'.eai-report blockquote{border-left:3px solid #cfd9e8;margin:6px 0;padding:2px 10px;color:#5a6b85;}',
-		'.eai-report a.eai-locate{color:#2f6fbf;text-decoration:underline;cursor:pointer;}',
-		'.eai-log{height:330px;overflow:auto;border:1px solid #dfe6f0;border-radius:3px;background:#1f2733;color:#c8d4e4;',
-		'	padding:8px;font-family:Consolas,Monaco,monospace;font-size:11px;white-space:pre-wrap;}',
-		'.eai-settings label{display:block;margin:8px 0 3px;font-weight:bold;color:#33405a;}',
-		'.eai-settings input[type=text],.eai-settings input[type=password],.eai-settings select,',
-		'.eai-settings input[type=number]{width:420px;padding:5px;border:1px solid #cfd9e8;border-radius:3px;}',
-		'.eai-settings .eai-row{display:flex;gap:12px;align-items:center;}',
-		'.eai-settings .eai-row>*{width:auto!important;}',
-		'.eai-settings .eai-hint{color:#7b8aa3;font-size:11px;margin-top:2px;}',
-		'.eai-settings .eai-btns{margin-top:14px;}',
-		'.eai-settings .eai-btns button{padding:6px 16px;margin-right:8px;border:1px solid #2f6fbf;background:#2f6fbf;',
-		'	color:#fff;border-radius:3px;cursor:pointer;}',
-		'.eai-settings .eai-btns button.eai-secondary{background:#fff;color:#2f6fbf;}',
-		'.eai-footer{padding:6px 10px;border-top:1px solid #dfe6f0;background:#f9fbfe;color:#7b8aa3;font-size:11px;}'
+	/* ------------------------------------------------------------ design -- */
+
+	var C = {
+		bg: '#ffffff',
+		surface: '#f7f9fc',
+		surfaceAlt: '#f1f5fb',
+		border: '#e3e8f0',
+		borderStrong: '#d3ddec',
+		text: '#1f2733',
+		muted: '#8794a8',
+		primary: '#2f6fbf',
+		primaryDark: '#1e3a68',
+		primaryDeep: '#16294a',
+		green: '#0f766e',
+		red: '#b03a3a',
+		radius: '10px'
+	};
+
+	/** {display:'flex', gap:'8px'} -> "display:flex;gap:8px;" */
+	function st(o) {
+		var out = [];
+		for (var k in o) {
+			if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+			var name = k.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
+			out.push(name + ':' + o[k]);
+		}
+		return out.join(';');
+	}
+
+	var FONT = '"Microsoft YaHei","Segoe UI",Verdana,sans-serif';
+	var MONO = 'Consolas,Monaco,"Courier New",monospace';
+
+	/* hover / animation only — never layout */
+	var EXTRA_CSS = [
+		'.eai-pill{transition:all .15s ease;cursor:pointer;}',
+		'.eai-pill:hover{border-color:#8fb2df !important;background:#eef5ff !important;transform:translateY(-1px);box-shadow:0 3px 10px rgba(47,111,191,.16);}',
+		'.eai-btn{transition:all .15s ease;cursor:pointer;}',
+		'.eai-btn:hover{filter:brightness(.96);}',
+		'.eai-tab{transition:all .15s ease;cursor:pointer;}',
+		'.eai-locate{text-decoration:underline;cursor:pointer;}',
+		'.eai-chat::-webkit-scrollbar,.eai-report::-webkit-scrollbar,.eai-log::-webkit-scrollbar{width:9px;}',
+		'.eai-chat::-webkit-scrollbar-thumb,.eai-report::-webkit-scrollbar-thumb,.eai-log::-webkit-scrollbar-thumb{background:#cbd6e6;border-radius:9px;}',
+		'.eai-in{transition:border-color .15s,box-shadow .15s;}',
+		'.eai-in:focus{border-color:#5b8fd6 !important;box-shadow:0 0 0 3px rgba(91,143,214,.15) !important;outline:none;}'
 	].join('');
+
+	function styleBlock() {
+		return '<style type="text/css">' + EXTRA_CSS + '</style>';
+	}
 
 	function injectStyle() {
 		if (document.getElementById('eai-style')) return;
 		var s = document.createElement('style');
 		s.id = 'eai-style';
 		s.type = 'text/css';
-		s.appendChild(document.createTextNode(CSS));
-		document.head.appendChild(s);
+		s.appendChild(document.createTextNode(EXTRA_CSS));
+		try { document.head.appendChild(s); } catch (e) { /* ignore */ }
 	}
 
-	/* ------------------------------------------------------ markdown ----- */
+	function logoSvg(size) {
+		size = size || 26;
+		return '<svg viewBox="0 0 32 32" width="' + size + '" height="' + size + '" style="display:block">' +
+			'<defs><linearGradient id="eaiG1" x1="0" y1="0" x2="0" y2="1">' +
+			'<stop offset="0" stop-color="#7df3fc"/><stop offset="1" stop-color="#16c2dd"/></linearGradient></defs>' +
+			'<g stroke="#7df3fc" stroke-width="1.7" stroke-linecap="round">' +
+			'<path d="M12.2 10.4 V11.8"/><path d="M16 10.4 V11.8"/><path d="M19.8 10.4 V11.8"/>' +
+			'<path d="M12.2 24.2 V25.6"/><path d="M16 24.2 V25.6"/><path d="M19.8 24.2 V25.6"/>' +
+			'<path d="M6.4 13.6 H7.8"/><path d="M6.4 17.2 H7.8"/><path d="M6.4 20.8 H7.8"/>' +
+			'<path d="M24.2 13.6 H25.6"/><path d="M24.2 17.2 H25.6"/><path d="M24.2 20.8 H25.6"/></g>' +
+			'<rect x="7.8" y="11.8" width="16.4" height="12.4" rx="2" fill="url(#eaiG1)"/>' +
+			'<rect x="11.4" y="15" width="9.2" height="6" rx="1" fill="#0d2b46"/>' +
+			'<path d="M23.5 2.3 L24.75 6.05 L28.5 7.3 L24.75 8.55 L23.5 12.3 L22.25 8.55 L18.5 7.3 L22.25 6.05 Z" fill="#ffc44d"/>' +
+			'<path d="M7.6 4.2 L8.4 6.4 L10.6 7.2 L8.4 8 L7.6 10.2 L6.8 8 L4.6 7.2 L6.8 6.4 Z" fill="#a5f0ff"/>' +
+			'</svg>';
+	}
+	UI.logoSvg = logoSvg;
 
-	function mdToHtml(md) {
+	/* -------------------------------------------------------- markdown -- */
+
+	function inlineCss() {
+		return {
+			h1: st({ fontSize: '17px', margin: '14px 0 6px', color: C.primaryDark, fontWeight: '600', lineHeight: '1.35' }),
+			h2: st({ fontSize: '15px', margin: '14px 0 6px', color: C.primaryDark, fontWeight: '600', lineHeight: '1.35' }),
+			h3: st({ fontSize: '13.5px', margin: '12px 0 5px', color: '#33517f', fontWeight: '600' }),
+			p: st({ margin: '5px 0' }),
+			ul: st({ margin: '5px 0 5px 20px', padding: '0' }),
+			ol: st({ margin: '5px 0 5px 20px', padding: '0' }),
+			li: st({ margin: '2px 0' }),
+			table: st({ borderCollapse: 'collapse', width: '100%', margin: '8px 0', fontSize: '12.5px' }),
+			th: st({ border: '1px solid ' + C.border, padding: '5px 8px', textAlign: 'left', background: C.surfaceAlt, fontWeight: '600' }),
+			td: st({ border: '1px solid ' + C.border, padding: '5px 8px', textAlign: 'left', verticalAlign: 'top' }),
+			code: st({ background: '#f0f3f8', padding: '1px 5px', borderRadius: '4px', fontFamily: MONO, fontSize: '12px' }),
+			pre: st({ background: '#f6f8fb', border: '1px solid ' + C.border, padding: '10px', borderRadius: '8px', overflow: 'auto', margin: '8px 0' }),
+			quote: st({ borderLeft: '3px solid #cfd9e8', margin: '6px 0', padding: '2px 12px', color: '#5a6b85' }),
+			hr: st({ border: 'none', borderTop: '1px solid ' + C.border, margin: '12px 0' })
+		};
+	}
+
+	UI.mdToHtml = function (md) {
 		md = String(md || '').replace(/\r\n/g, '\n');
+		var S = inlineCss();
 		var lines = md.split('\n');
-		var out = [], i;
-		var inCode = false, codeBuf = [];
-		var listStack = [];
+		var out = [], inCode = false, codeBuf = [], listStack = [];
 
 		function closeLists(toDepth) {
 			while (listStack.length > (toDepth || 0)) {
@@ -95,106 +139,102 @@
 
 		function inline(t) {
 			return U.esc(t)
-				.replace(/`([^`]+)`/g, '<code>$1</code>')
+				.replace(/`([^`]+)`/g, '<code style="' + S.code + '">$1</code>')
 				.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-				.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-				.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+				.replace(/(^|[^*\w])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+				.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+					'<a href="$2" target="_blank" style="color:' + C.primary + '">$1</a>');
 		}
 
-		for (i = 0; i < lines.length; i++) {
+		function splitRow(l) {
+			return l.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
+		}
+
+		for (var i = 0; i < lines.length; i++) {
 			var line = lines[i];
 
 			if (/^\s*```/.test(line)) {
 				if (inCode) {
-					out.push('<pre><code>' + U.esc(codeBuf.join('\n')) + '</code></pre>');
+					out.push('<pre style="' + S.pre + '"><code style="font-family:' + MONO + ';font-size:12px">' +
+						U.esc(codeBuf.join('\n')) + '</code></pre>');
 					codeBuf = []; inCode = false;
 				} else { closeLists(0); inCode = true; }
 				continue;
 			}
 			if (inCode) { codeBuf.push(line); continue; }
-
 			if (!line.trim()) { closeLists(0); continue; }
 
 			var h = /^(#{1,6})\s+(.*)$/.exec(line);
 			if (h) {
 				closeLists(0);
-				var lvl = h[1].length;
-				out.push('<h' + lvl + '>' + inline(h[2]) + '</h' + lvl + '>');
+				var lvl = Math.min(h[1].length, 3);
+				var hs = lvl === 1 ? S.h1 : lvl === 2 ? S.h2 : S.h3;
+				out.push('<h' + lvl + ' style="' + hs + '">' + inline(h[2]) + '</h' + lvl + '>');
 				continue;
 			}
-
-			/* horizontal rule */
 			if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
-				closeLists(0); out.push('<hr/>'); continue;
+				closeLists(0); out.push('<hr style="' + S.hr + '"/>'); continue;
 			}
 
-			/* table */
 			if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
 				closeLists(0);
-				var head = splitRow(line);
-				var rows = [];
+				var head = splitRow(line), rows = [];
 				i += 2;
-				while (i < lines.length && /^\s*\|/.test(lines[i])) {
-					rows.push(splitRow(lines[i])); i++;
-				}
+				while (i < lines.length && /^\s*\|/.test(lines[i])) { rows.push(splitRow(lines[i])); i++; }
 				i--;
-				var html = '<table><thead><tr>';
-				head.forEach(function (c) { html += '<th>' + inline(c) + '</th>'; });
+				var html = '<table style="' + S.table + '"><thead><tr>';
+				head.forEach(function (c) { html += '<th style="' + S.th + '">' + inline(c) + '</th>'; });
 				html += '</tr></thead><tbody>';
 				rows.forEach(function (r) {
 					html += '<tr>';
-					r.forEach(function (c) { html += '<td>' + inline(c) + '</td>'; });
+					r.forEach(function (c) { html += '<td style="' + S.td + '">' + inline(c) + '</td>'; });
 					html += '</tr>';
 				});
-				html += '</tbody></table>';
-				out.push(html);
+				out.push(html + '</tbody></table>');
 				continue;
 			}
 
-			/* block quote */
 			if (/^\s*>\s?/.test(line)) {
 				closeLists(0);
-				out.push('<blockquote>' + inline(line.replace(/^\s*>\s?/, '')) + '</blockquote>');
+				out.push('<blockquote style="' + S.quote + '">' +
+					inline(line.replace(/^\s*>\s?/, '')) + '</blockquote>');
 				continue;
 			}
 
-			/* lists */
 			var ul = /^(\s*)[-*+]\s+(.*)$/.exec(line);
 			var ol = /^(\s*)\d+[.)]\s+(.*)$/.exec(line);
 			if (ul || ol) {
-				var depth = ul ? (ul[1].length / 2 + 1) : (ol[1].length / 2 + 1);
+				var depth = Math.max(1, Math.floor((ul ? ul[1] : ol[1]).length / 2) + 1);
 				var kind = ul ? 'ul' : 'ol';
-				depth = Math.floor(depth);
-				while (listStack.length > depth) { out.push(listStack.pop() === 'ul' ? '</ul>' : '</ol>'); }
+				while (listStack.length > depth) out.push(listStack.pop() === 'ul' ? '</ul>' : '</ol>');
 				if (listStack.length < depth) {
-					while (listStack.length < depth) { out.push('<' + kind + '>'); listStack.push(kind); }
+					while (listStack.length < depth) {
+						out.push('<' + kind + ' style="' + (kind === 'ul' ? S.ul : S.ol) + '">');
+						listStack.push(kind);
+					}
 				} else if (listStack[listStack.length - 1] !== kind) {
 					out.push(listStack.pop() === 'ul' ? '</ul>' : '</ol>');
-					out.push('<' + kind + '>'); listStack.push(kind);
+					out.push('<' + kind + ' style="' + (kind === 'ul' ? S.ul : S.ol) + '">');
+					listStack.push(kind);
 				}
-				out.push('<li>' + inline((ul ? ul[2] : ol[2])) + '</li>');
+				out.push('<li style="' + S.li + '">' + inline(ul ? ul[2] : ol[2]) + '</li>');
 				continue;
 			}
 			closeLists(0);
-			out.push('<p>' + inline(line) + '</p>');
+			out.push('<p style="' + S.p + '">' + inline(line) + '</p>');
 		}
 		if (inCode && codeBuf.length) {
-			out.push('<pre><code>' + U.esc(codeBuf.join('\n')) + '</code></pre>');
+			out.push('<pre style="' + S.pre + '"><code style="font-family:' + MONO + ';font-size:12px">' +
+				U.esc(codeBuf.join('\n')) + '</code></pre>');
 		}
 		closeLists(0);
 		return out.join('\n');
+	};
 
-		function splitRow(l) {
-			return l.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
-		}
-	}
+	function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-	UI.mdToHtml = mdToHtml;
-
-	/* Makes every designator of the current design clickable. */
-	function linkifyDesignators(html) {
-		var json = EAI.eda.activeJson();
-		var pres = [];
+	function linkify(html) {
+		var json = EAI.eda.activeJson(), pres = [];
 		if (json && json.schlib) {
 			for (var gid in json.schlib) {
 				if (!Object.prototype.hasOwnProperty.call(json.schlib, gid)) continue;
@@ -208,306 +248,180 @@
 		}
 		if (!pres.length) return html;
 		pres.sort(function (a, b) { return b.length - a.length; });
-		var re = new RegExp('(?<![\\w>])(' + pres.map(escapeRe).join('|') + ')(?![\\w<])', 'g');
+		var re;
+		try {
+			re = new RegExp('(?<![\\w>])(' + pres.map(escapeRe).join('|') + ')(?![\\w<])', 'g');
+		} catch (e) { return html; }
 		return html.replace(re, function (m, p1) {
-			return '<a class="eai-locate" data-pre="' + U.esc(p1) + '">' + p1 + '</a>';
+			return '<a class="eai-locate" data-pre="' + U.esc(p1) + '" ' +
+				'style="color:' + C.primary + ';text-decoration:underline;cursor:pointer">' + p1 + '</a>';
 		});
 	}
 
-	function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+	/* ------------------------------------------------------------ pieces -- */
 
-	/* --------------------------------------------------------- settings -- */
+	function iconBtn(id, title, glyph) {
+		return '<a href="#" id="' + id + '" title="' + title + '" style="' +
+			st({
+				color: '#fff', textDecoration: 'none', fontSize: '15px', lineHeight: '1',
+				padding: '6px 8px', borderRadius: '8px', background: 'rgba(255,255,255,.12)',
+				display: 'inline-block'
+			}) + '">' + glyph + '</a>';
+	}
 
-	/* ------------------------------------------------------ provider presets -- */
-
-	/*
-	 * Every address below is only a convenience: the Base URL field stays
-	 * completely free, so any third party gateway / self hosted model can be
-	 * used.  Selecting a preset only fills the fields in.
-	 */
-	var PROVIDERS = [
-		{ id: 'openai', label: 'OpenAI', protocol: 'openai',
-		  base: 'https://api.openai.com/v1', model: 'gpt-4o' },
-		{ id: 'anthropic', label: 'Anthropic Claude', protocol: 'anthropic',
-		  base: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5' },
-		{ id: 'deepseek', label: 'DeepSeek', protocol: 'openai',
-		  base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-		{ id: 'moonshot', label: 'Moonshot / Kimi', protocol: 'openai',
-		  base: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-		{ id: 'qwen', label: 'DashScope Qwen', protocol: 'openai',
-		  base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
-		{ id: 'zhipu', label: 'BigModel GLM', protocol: 'openai',
-		  base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-plus' },
-		{ id: 'siliconflow', label: 'SiliconFlow', protocol: 'openai',
-		  base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct' },
-		{ id: 'openrouter', label: 'OpenRouter', protocol: 'openai',
-		  base: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.5' },
-		{ id: 'ollama', label: 'Local Ollama', protocol: 'openai',
-		  base: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b' },
-		{ id: 'azure', label: 'Azure OpenAI', protocol: 'openai',
-		  base: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>',
-		  model: 'gpt-4o' },
-		{ id: 'custom-anthropic', label: 'Custom Claude compatible API', protocol: 'anthropic',
-		  base: 'https://<your-gateway>/v1', model: 'claude-sonnet-4-5' },
-		{ id: 'custom-openai', label: 'Custom OpenAI compatible API', protocol: 'openai',
-		  base: 'https://<your-gateway>/v1', model: '' }
-	];
-
-	/* --------------------------------------------------------- settings -- */
-
-	UI.openSettings = function () {
-		injectStyle();
-		var cfg = EAI.cfg.current();
-
-		var providerOptions = '<option value="">-- custom / custom --</option>';
-		PROVIDERS.forEach(function (p) {
-			providerOptions += '<option value="' + p.id + '">' + U.esc(p.label) + '</option>';
-		});
-
-		var html =
-			'<div class="eai-root eai-settings">' +
-			'  <label>1. API protocol / API \u534f\u8bae</label>' +
-			'  <select id="eai-provider">' +
-			'    <option value="openai">OpenAI (compatible)</option>' +
-			'    <option value="anthropic">Anthropic (Claude)</option>' +
-			'  </select>' +
-			'  <div class="eai-hint" id="eai-provider-hint"></div>' +
-			'  <label>2. Provider preset / \u4f9b\u5e94\u5546\u5feb\u6377\u586b\u5165\uff08\u53ef\u9009\uff09</label>' +
-			'  <select id="eai-preset">' + providerOptions + '</select>' +
-			'  <div class="eai-hint">\u9009\u4e00\u4e2a\u4f9b\u5e94\u5546\u53ea\u662f\u5e2e\u4f60\u586b\u4e0a\u5730\u5740\u548c\u6a21\u578b\uff0c' +
-			'\u4e0b\u9762\u7684\u5730\u5740\u3001\u6a21\u578b\u3001Key \u90fd\u53ef\u4ee5\u968f\u4fbf\u6539\u6210\u4efb\u4f55\u7b2c\u4e09\u65b9\u7f51\u5173\u6216\u81ea\u5efa\u670d\u52a1\u3002</div>' +
-			'  <label>3. Base URL / \u63a5\u53e3\u5730\u5740\uff08\u53ef\u5b8c\u5168\u81ea\u5b9a\u4e49\uff09</label>' +
-			'  <input type="text" id="eai-baseurl" placeholder="https://api.openai.com/v1">' +
-			'  <div class="eai-hint">\u6700\u7ec8\u8bf7\u6c42\u5730\u5740\uff1a<code id="eai-endpoint">-</code></div>' +
-			'  <label>4. API Key</label>' +
-			'  <input type="password" id="eai-apikey" placeholder="sk-...">' +
-			'  <label>5. Model / \u6a21\u578b</label>' +
-			'  <input type="text" id="eai-model" placeholder="gpt-4o / claude-sonnet-4-5">' +
-			'  <div class="eai-row">' +
-			'    <label style="margin:0">Temperature</label>' +
-			'    <input type="number" id="eai-temp" step="0.1" min="0" max="2">' +
-			'    <label style="margin:0">Max tokens</label>' +
-			'    <input type="number" id="eai-maxtok" step="256" min="256">' +
-			'    <label style="margin:0">Timeout (s)</label>' +
-			'    <input type="number" id="eai-timeout" step="10" min="10">' +
-			'  </div>' +
-			'  <label>Answer language / \u56de\u7b54\u8bed\u8a00</label>' +
-			'  <select id="eai-lang">' +
-			'    <option value="zh">\u4e2d\u6587</option>' +
-			'    <option value="en">English</option>' +
-			'  </select>' +
-			'  <label>Extra headers (optional, one per line, "Key: Value")</label>' +
-			'  <input type="text" id="eai-headers" placeholder="X-Example: 1">' +
-			'  <div class="eai-btns">' +
-			'    <button id="eai-save">Save / \u4fdd\u5b58</button>' +
-			'    <button id="eai-test" class="eai-secondary">Test connection / \u6d4b\u8bd5\u8fde\u63a5</button>' +
-			'  </div>' +
-			'  <div class="eai-hint" id="eai-msg"></div>' +
+	function headerHtml() {
+		return '<div style="' + st({
+			display: 'flex', alignItems: 'center', gap: '12px',
+			padding: '14px 16px',
+			background: 'linear-gradient(135deg,#16294a 0%,#1e3a68 55%,#2e5896 100%)',
+			color: '#fff', borderTopLeftRadius: '6px', borderTopRightRadius: '6px'
+		}) + '">' +
+			'<div style="' + st({
+				width: '38px', height: '38px', borderRadius: '11px',
+				background: '#0b1a30', display: 'flex',
+				alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
+				boxShadow: '0 4px 14px rgba(0,0,0,.35)'
+			}) + '">' + logoSvg(27) + '</div>' +
+			'<div style="' + st({ flex: '1 1 auto', minWidth: '0' }) + '">' +
+			'  <div style="' + st({ fontSize: '13.5px', fontWeight: '600', letterSpacing: '.3px' }) +
+			'">EasyEDA 智能设计助手</div>' +
+			'  <div id="eai-sub" style="' + st({ fontSize: '11.5px', opacity: '.75', marginTop: '3px' }) +
+			'">正在读取文档…</div>' +
+			'</div>' +
+			'<span id="eai-state" style="' + st({
+				fontSize: '11px', background: 'rgba(255,255,255,.16)', padding: '4px 11px',
+				borderRadius: '20px', whiteSpace: 'nowrap'
+			}) + '">未配置</span>' +
+			iconBtn('eai-btn-clear', '清空会话', '&#128465;') +
+			iconBtn('eai-btn-settings', '设置', '&#9881;') +
+			iconBtn('eai-btn-image', '附加图片', '&#128247;') +
+			'<input type="file" id="eai-file" accept="image/*" style="display:none">' +
 			'</div>';
+	}
 
-		dlgSettings = EAI.api('createDialog', {
-			title: 'AI Assistant — ' + U.t('eai.menu.settings', 'Settings'),
-			width: 560,
-			height: 660,
-			modal: true,
-			resizable: true,
-			content: html
+	function panelHtml() {
+		return styleBlock() + '<div class="eai-root" style="' + st({
+			fontFamily: FONT, fontSize: '13px', color: C.text, lineHeight: '1.6',
+			background: C.bg, margin: '0', padding: '0'
+		}) + '">' +
+			headerHtml() +
+
+			'<div style="' + st({
+				display: 'flex', gap: '6px', padding: '10px 16px',
+				background: C.bg, borderBottom: '1px solid ' + C.border
+			}) + '">' +
+			'  <a href="#" class="eai-tab eai-active" data-tab="chat" style="' + segCss(true) + '">对话</a>' +
+			'  <a href="#" class="eai-tab" data-tab="log" style="' + segCss(false) + '">日志</a>' +
+			'</div>' +
+
+			'<div class="eai-pane" data-pane="chat" style="display:block">' +
+			'  <div id="eai-pills" style="' + st({
+				display: 'flex', flexWrap: 'wrap', gap: '8px',
+				padding: '11px 16px', background: C.surface,
+				borderBottom: '1px solid ' + C.border
+			}) + '"></div>' +
+			'  <div id="eai-chat" class="eai-chat" style="' + st({
+				height: '330px', overflowY: 'auto', padding: '14px 16px',
+				background: '#f8fafd'
+			}) + '"></div>' +
+			composeHtml() +
+			'</div>' +
+
+			'<div class="eai-pane" data-pane="log" style="display:none">' +
+			'  <div id="eai-log" class="eai-log" style="' + st({
+				height: '418px', overflowY: 'auto', background: '#101926', color: '#c3d3e6',
+				padding: '12px 14px', fontFamily: MONO, fontSize: '11.5px',
+				whiteSpace: 'pre-wrap', lineHeight: '1.55'
+			}) + '"></div>' +
+			'</div>' +
+			'</div>';
+	}
+
+	function composeHtml() {
+		return '  <div style="' + st({
+			padding: '12px 16px 14px', borderTop: '1px solid ' + C.border, background: C.bg
+		}) + '">' +
+			'    <textarea id="eai-input" class="eai-in" style="' + st({
+				width: '100%', height: '76px', resize: 'vertical', boxSizing: 'border-box',
+				border: '1px solid ' + C.borderStrong, borderRadius: '10px',
+				padding: '10px 12px', fontSize: '13px', fontFamily: FONT,
+				color: C.text, outline: 'none'
+			}) + '" placeholder="描述你的需求，或点击上面的胶囊按钮填入提示词…"></textarea>' +
+			'    <div style="' + st({
+				display: 'flex', alignItems: 'center', gap: '8px', marginTop: '9px'
+			}) + '">' +
+			'      <span id="eai-imgbadge" style="' + st({
+				display: 'none', fontSize: '11px', background: '#e8eefb', color: '#2f5fa8',
+				borderRadius: '12px', padding: '3px 10px'
+			}) + '">已附加图片</span>' +
+			'      <span style="' + st({ fontSize: '11px', color: C.muted }) + '">Ctrl + Enter 发送</span>' +
+			'      <span style="flex:1"></span>' +
+			'      <button id="eai-stop" class="eai-btn" style="' + st({
+				display: 'none', background: '#fff', border: '1px solid #e3a9a9', color: '#a83232',
+				borderRadius: '9px', padding: '8px 16px', fontSize: '12.5px', fontFamily: FONT
+			}) + '">停止</button>' +
+			'      <button id="eai-send" class="eai-btn" style="' + st({
+				background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
+				borderRadius: '9px', padding: '8px 22px', fontSize: '12.5px', fontWeight: '600',
+				fontFamily: FONT, boxShadow: '0 2px 8px rgba(47,111,191,.28)'
+			}) + '">发送</button>' +
+			'    </div>' +
+			'  </div>';
+	}
+
+	function segCss(active) {
+		return st({
+			padding: '6px 18px', borderRadius: '999px',
+			background: active ? C.primary : '#eef3fa',
+			color: active ? '#ffffff' : '#4a5f7d',
+			fontWeight: active ? '600' : '400',
+			textDecoration: 'none', fontSize: '12.5px'
 		});
+	}
 
-		var $ = EAI.jq;
-		var $d = $(dlgSettings);
-
-		$('#eai-provider', $d).val(cfg.provider);
-		$('#eai-baseurl', $d).val(cfg.baseUrl);
-		$('#eai-apikey', $d).val(cfg.apiKey);
-		$('#eai-model', $d).val(cfg.model);
-		$('#eai-temp', $d).val(cfg.temperature);
-		$('#eai-maxtok', $d).val(cfg.maxTokens);
-		$('#eai-timeout', $d).val(cfg.timeout);
-		$('#eai-lang', $d).val(cfg.language);
-		$('#eai-headers', $d).val(cfg.extraHeaders);
-
-		function hintFor(p) {
-			return p === 'anthropic'
-				? 'Claude messages API — header x-api-key + anthropic-version, endpoint = <base>/messages.'
-				: 'OpenAI chat completions API — header Authorization: Bearer, endpoint = <base>/chat/completions.';
-		}
-
-		function collect() {
-			return {
-				provider: $('#eai-provider', $d).val(),
-				baseUrl: ($('#eai-baseurl', $d).val() || '').trim(),
-				apiKey: ($('#eai-apikey', $d).val() || '').trim(),
-				model: ($('#eai-model', $d).val() || '').trim(),
-				temperature: Number($('#eai-temp', $d).val() || 0),
-				maxTokens: Number($('#eai-maxtok', $d).val() || 4096),
-				timeout: Number($('#eai-timeout', $d).val() || 180),
-				language: $('#eai-lang', $d).val(),
-				extraHeaders: ($('#eai-headers', $d).val() || '').trim()
-			};
-		}
-
-		function refreshEndpoint() {
-			try {
-				$('#eai-endpoint', $d).text(EAI.llm.endpoint(collect()));
-			} catch (e) {
-				$('#eai-endpoint', $d).text('-');
-			}
-		}
-
-		$('#eai-provider-hint', $d).text(hintFor(cfg.provider));
-		$('#eai-provider', $d).on('change', function () {
-			$('#eai-provider-hint', $d).text(hintFor(this.value));
-			refreshEndpoint();
+	function ghostBtn() {
+		return st({
+			background: '#fff', border: '1px solid ' + C.borderStrong, color: '#23405f',
+			borderRadius: '9px', padding: '7px 15px', fontSize: '12.5px', fontFamily: FONT
 		});
-		$('#eai-baseurl', $d).on('input', refreshEndpoint);
-		$('#eai-model', $d).on('input', refreshEndpoint);
-
-		$('#eai-preset', $d).on('change', function () {
-			var id = this.value;
-			if (!id) return;
-			var p = null, i;
-			for (i = 0; i < PROVIDERS.length; i++) {
-				if (PROVIDERS[i].id === id) { p = PROVIDERS[i]; break; }
-			}
-			if (!p) return;
-			$('#eai-provider', $d).val(p.protocol);
-			$('#eai-provider-hint', $d).text(hintFor(p.protocol));
-			$('#eai-baseurl', $d).val(p.base);
-			if (p.model) $('#eai-model', $d).val(p.model);
-			refreshEndpoint();
-			$('#eai-msg', $d).css('color', '#5a6b85')
-				.text('Provider preset filled in — address, model and key stay editable.');
-		});
-
-		$('#eai-save', $d).on('click', function () {
-			var c = collect();
-			EAI.cfg.save(c);
-			EAI._cfg = c;
-			$('#eai-msg', $d).css('color', '#1d7a3e')
-				.text('Saved: ' + c.provider + ' · ' + (c.model || '-') + ' · ' + EAI.llm.endpoint(c));
-			EAI.log('configuration saved (' + c.provider + ' / ' + c.model + ')');
-			UI.refreshStatus();
-		});
-
-		$('#eai-test', $d).on('click', function () {
-			var c = collect();
-			if (!c.apiKey || !c.baseUrl || !c.model) {
-				$('#eai-msg', $d).css('color', '#932626')
-					.text('Please fill in the base URL, the API key and the model.');
-				return;
-			}
-			$('#eai-msg', $d).css('color', '#5a6b85')
-				.text('Testing ' + EAI.llm.endpoint(c) + ' …');
-			$('#eai-test', $d).prop('disabled', true);
-			EAI.llm.test(c).then(function (r) {
-				$('#eai-msg', $d).css('color', '#1d7a3e').text('Connection OK — ' + r);
-			}).catch(function (e) {
-				$('#eai-msg', $d).css('color', '#932626').text('Failed: ' + e.message);
-			}).then(function () {
-				$('#eai-test', $d).prop('disabled', false);
-			});
-		});
-
-		refreshEndpoint();
-		$('.dialog', $d).dialog('open');
-		return dlgSettings;
-	};
+	}
 
 	/* ------------------------------------------------------------ panel -- */
 
-	function panelHtml() {
-		return '<div class="eai-root">' +
-			'  <div class="eai-bar">' +
-			'    <strong>AI Assistant</strong>' +
-			'    <span class="eai-status" id="eai-status"></span>' +
-			'    <span style="flex:1"></span>' +
-			'    <a href="#" class="eai-btn" id="eai-open-settings">Settings</a>' +
-			'    <a href="#" class="eai-btn" id="eai-pick-image">Attach image</a>' +
-			'    <input type="file" id="eai-file" accept="image/*" style="display:none">' +
-			'  </div>' +
-			'  <div class="eai-actions" id="eai-actions">' +
-			'    <a href="#" class="eai-btn" data-act="review">Schematic review (netlist)</a>' +
-			'    <a href="#" class="eai-btn" data-act="bom">BOM analysis</a>' +
-			'    <a href="#" class="eai-btn" data-act="snapshot">Snapshot review</a>' +
-			'    <a href="#" class="eai-btn" data-act="edit">Batch edit values</a>' +
-			'    <a href="#" class="eai-btn" data-act="generate">Generate schematic</a>' +
-			'    <a href="#" class="eai-btn" data-act="symbol">Symbol from image</a>' +
-			'    <a href="#" class="eai-btn" data-act="clear">Clear</a>' +
-			'  </div>' +
-			'  <div class="eai-tabs">' +
-			'    <a href="#" class="eai-tab eai-active" data-tab="chat">Chat</a>' +
-			'    <a href="#" class="eai-tab" data-tab="report">Report</a>' +
-			'    <a href="#" class="eai-tab" data-tab="log">Log</a>' +
-			'  </div>' +
-			'  <div class="eai-pane eai-active" data-pane="chat">' +
-			'    <div class="eai-chat" id="eai-chat"></div>' +
-			'    <div class="eai-input">' +
-			'      <textarea id="eai-input" placeholder="Ask the AI about the current schematic / PCB …"></textarea>' +
-			'      <button id="eai-send">Send</button>' +
-			'    </div>' +
-			'  </div>' +
-			'  <div class="eai-pane" data-pane="report">' +
-			'    <div class="eai-report" id="eai-report"></div>' +
-			'    <div style="margin-top:8px">' +
-			'      <a href="#" class="eai-btn" id="eai-export-md">Export .md</a>' +
-			'      <a href="#" class="eai-btn" id="eai-export-html">Export .html</a>' +
-			'      <a href="#" class="eai-btn" id="eai-apply">Apply suggested changes</a>' +
-			'    </div>' +
-			'  </div>' +
-			'  <div class="eai-pane" data-pane="log">' +
-			'    <div class="eai-log" id="eai-log"></div>' +
-			'  </div>' +
-			'  <div class="eai-footer">EasyEDA Std extension · AI Assistant v' + EAI.ver + '</div>' +
-			'</div>';
-	}
-
 	UI.openPanel = function () {
 		injectStyle();
-		if (dlgPanel) {
-			try { $('.dialog', EAI.jq(dlgPanel)).dialog('open'); } catch (e) { /* ignore */ }
+		var $ = EAI.jq;
+
+		if (UI.dlgPanel) {
+			try { UI.dlgPanelCtl.open(); } catch (e) { /* ignore */ }
 			UI.refreshStatus();
-			return dlgPanel;
+			return UI.dlgPanel;
 		}
 
-		dlgPanel = EAI.api('createDialog', {
-			title: 'AI Assistant',
-			width: 900,
-			height: 660,
+		var ctl = EAI.dlg({
+			title: 'AI 助手',
+			width: 920,
+			height: 700,
 			modal: false,
-			resizable: true,
 			content: panelHtml()
 		});
+		if (!ctl) {
+			EAI.toast('AI 助手面板打开失败，请看「设置 → 诊断」。', 'error');
+			return null;
+		}
+		UI.dlgPanelCtl = ctl;
+		var $d = ctl.el;
+		UI.dlgPanel = $d;
 
-		var $ = EAI.jq;
-		var $d = $(dlgPanel);
-
-		$('.dialog', $d).dialog('open');
-
-		$('#eai-open-settings', $d).on('click', function (e) {
+		$('#eai-btn-settings', $d).on('click', function (e) {
 			e.preventDefault(); UI.openSettings();
 		});
-
-		$('.eai-tab', $d).on('click', function (e) {
+		$('#eai-btn-clear', $d).on('click', function (e) {
 			e.preventDefault();
-			var name = $(this).data('tab');
-			$('.eai-tab', $d).removeClass('eai-active');
-			$(this).addClass('eai-active');
-			$('.eai-pane', $d).removeClass('eai-active');
-			$('.eai-pane[data-pane="' + name + '"]', $d).addClass('eai-active');
+			UI.clearChat();
 		});
 
-		$('#eai-send', $d).on('click', function () { UI.sendInput(); });
-		$('#eai-input', $d).on('keydown', function (e) {
-			if (e.keyCode === 13 && (e.ctrlKey || e.metaKey)) { e.preventDefault(); UI.sendInput(); }
-		});
-
-		$('#eai-actions a.eai-btn', $d).on('click', function (e) {
-			e.preventDefault();
-			UI.runAction($(this).data('act'));
-		});
-
-		$('#eai-pick-image', $d).on('click', function (e) {
+		$('#eai-btn-image', $d).on('click', function (e) {
 			e.preventDefault();
 			$('#eai-file', $d).trigger('click');
 		});
@@ -516,536 +430,866 @@
 			if (!f) return;
 			var reader = new FileReader();
 			reader.onload = function () {
-				var dataUrl = reader.result;
+				var dataUrl = String(reader.result || '');
 				pendingImage = {
 					dataUrl: dataUrl,
-					base64: String(dataUrl).split(',')[1] || '',
-					mediaType: f.type || 'image/png',
-					name: f.name
+					base64: dataUrl.split(',')[1] || '',
+					mediaType: f.type || 'image/png'
 				};
-				UI.appendMsg('user', 'Attached image: ' + f.name + ' (' +
-					Math.round(pendingImage.base64.length * 0.75 / 1024) + ' kB)');
+				$('#eai-imgbadge', $d).css('display', 'inline-block');
+				UI.appendMsg('sys', '已附加图片：' + f.name);
 			};
 			reader.readAsDataURL(f);
 			this.value = '';
 		});
 
-		$('#eai-export-md', $d).on('click', function (e) {
+		$('.eai-tab', $d).on('click', function (e) {
 			e.preventDefault();
-			U.download('ai-review-' + Date.now() + '.md', lastReport || '');
-		});
-		$('#eai-export-html', $d).on('click', function (e) {
-			e.preventDefault();
-			var html = '<!doctype html><meta charset="utf-8"><title>AI review</title>' +
-				'<style>body{font-family:sans-serif;padding:24px;max-width:1000px;margin:auto}' +
-				'table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:4px 8px}' +
-				'code{background:#f2f4f8;padding:1px 4px}</style>' + mdToHtml(lastReport || '');
-			U.download('ai-review-' + Date.now() + '.html', html, 'text/html;charset=utf-8');
-		});
-		$('#eai-apply', $d).on('click', function (e) {
-			e.preventDefault();
-			UI.applyPendingEdits();
+			UI.activateTab($(this).data('tab'));
 		});
 
+		$('#eai-send', $d).on('click', function () { UI.send(); });
+		$('#eai-stop', $d).on('click', function () {
+			EAI.agent.stop();
+			UI.appendMsg('sys', '已请求停止。');
+		});
+		$('#eai-input', $d).on('keydown', function (e) {
+			if (e.keyCode === 13 && (e.ctrlKey || e.metaKey)) { e.preventDefault(); UI.send(); }
+		});
+
+		/* designator links and the report card live inside the chat stream */
+		$('#eai-chat', $d).on('click', '.eai-locate', function (e) {
+			e.preventDefault();
+			var pre = $(this).data('pre');
+			var found = EAI.eda.locateComponent(pre) || EAI.eda.locateFootprint(pre);
+			UI.appendMsg(found ? 'sys' : 'err', found ? ('已定位 ' + pre) : ('未找到 ' + pre));
+		});
+
+		$('#eai-chat', $d).on('click', '[data-eai-act]', function (e) {
+			e.preventDefault();
+			var act = $(this).attr('data-eai-act');
+			var card = $(this).closest('[data-eai-card]');
+			var md = card.length ? card.data('eai-report') : lastReport;
+			if (act === 'preview') UI.openReportDialog(md);
+			else { UI._previewMd = md || ''; UI.downloadReport(act); }
+		});
+
+		UI.renderPills();
 		UI.refreshStatus();
-		UI.appendMsg('sys', 'Ready. Open a schematic or a PCB and pick an action above.');
-		return dlgPanel;
+		UI.appendMsg('sys', '你好！当前文档：' + EAI.eda.docKindLabel() +
+			'。点上面的胶囊按钮可以快速填入提示词，然后点「发送」。');
+		return $d;
 	};
 
-	UI.refreshStatus = function () {
-		if (!dlgPanel) return;
-		var cfg = EAI.cfg.current();
+	/** Wipes the conversation so the context does not grow forever. */
+	UI.clearChat = function () {
+		if (!UI.dlgPanel) return;
 		var $ = EAI.jq;
-		$('#eai-status', $(dlgPanel)).text(
-			cfg.provider + ' · ' + (cfg.model || 'no model') +
-			(cfg.apiKey ? '' : ' · not configured'));
+		history.length = 0;
+		lastReport = '';
+		pendingImage = null;
+		UI._presetReport = false;
+		UI._previewMd = '';
+		$('#eai-chat', UI.dlgPanel).empty();
+		$('#eai-imgbadge', UI.dlgPanel).css('display', 'none');
+		var ta = $('#eai-input', UI.dlgPanel);
+		if (ta.length) ta.val('');
+		UI.appendMsg('sys', '会话已清空，可以开始新的对话。');
+		EAI.log('chat cleared');
+	};
+
+	UI.activateTab = function (name) {
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		$('.eai-tab', UI.dlgPanel).each(function () {
+			var active = $(this).data('tab') === name;
+			$(this).attr('style', segCss(active));
+			if (active) $(this).addClass('eai-active'); else $(this).removeClass('eai-active');
+		});
+		$('.eai-pane', UI.dlgPanel).each(function () {
+			if ($(this).data('pane') === name) $(this).css('display', 'block');
+			else $(this).css('display', 'none');
+		});
+	};
+
+	/* ------------------------------------------------------------ pills -- */
+
+	UI.renderPills = function () {
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		var box = $('#eai-pills', UI.dlgPanel);
+		if (!box.length) return;
+		box.empty();
+		EAI.agent.presets().forEach(function (p) {
+			var el = $('<span class="eai-pill"></span>');
+			el.attr('data-preset', p.id);
+			el.attr('style', st({
+				display: 'inline-flex', alignItems: 'center', gap: '6px',
+				padding: '7px 14px', borderRadius: '999px',
+				border: '1px solid #d6e0f0', background: '#ffffff',
+				color: '#25405f', fontSize: '12.5px', userSelect: 'none',
+				whiteSpace: 'nowrap', cursor: 'pointer'
+			}));
+			el.append('<span style="font-size:13px">' + (p.icon || '•') + '</span>');
+			el.append(document.createTextNode(p.label));
+			el.on('click', function () { UI.usePreset(p); });
+			box.append(el);
+		});
+	};
+
+	UI.usePreset = function (p) {
+		if (!UI.dlgPanel) return;
+		UI._presetReport = !!p.report;
+		var $ = EAI.jq;
+		var ta = $('#eai-input', UI.dlgPanel);
+		if (!ta.length) return;
+		ta.val(p.prompt || '');
+		ta.focus();
+		try {
+			var el = ta[0];
+			el.setSelectionRange(el.value.length, el.value.length);
+		} catch (e) { /* ignore */ }
+		UI.appendMsg('sys', p.prompt
+			? ('已填入「' + p.label + '」提示词，可自行修改后发送。')
+			: '直接输入你的问题即可。');
+	};
+
+	/* ----------------------------------------------------------- status -- */
+
+	UI.refreshStatus = function () {
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		var cfg = EAI.cfg.current();
+		var txt = cfg.model
+			? ((cfg.provider === 'anthropic' ? 'Claude' : 'OpenAI') + ' · ' + cfg.model)
+			: '未配置';
+		if (!cfg.apiKey) txt = '未配置';
+		var stEl = $('#eai-state', UI.dlgPanel);
+		if (stEl.length) stEl.text(txt).attr('title', EAI.llm.endpoint(cfg));
+		var sub = $('#eai-sub', UI.dlgPanel);
+		if (sub.length) {
+			try {
+				sub.text(EAI.eda.docKindLabel() + ' · ' + (EAI.eda.activeTitle() || '未打开文档'));
+			} catch (e) { /* ignore */ }
+		}
 	};
 
 	/* ----------------------------------------------------------- output -- */
 
-	UI.appendMsg = function (role, text, html) {
-		if (!dlgPanel) return;
+	function bubbleStyle(role) {
+		var base = {
+			padding: '9px 12px', borderRadius: '11px',
+			background: '#ffffff', border: '1px solid ' + C.border,
+			color: C.text, wordBreak: 'break-word', overflowWrap: 'anywhere'
+		};
+		if (role === 'user') { base.background = '#eef5ff'; base.borderColor = '#cfe0fb'; }
+		if (role === 'sys') { base.background = '#fff8e9'; base.borderColor = '#f0dfb6'; base.color = '#7a5b16'; base.fontSize = '12.5px'; }
+		if (role === 'err') { base.background = '#fdeeee'; base.borderColor = '#f2c8c8'; base.color = '#932626'; }
+		return st(base);
+	}
+
+	function avatarStyle(role) {
+		var bg = role === 'user' ? '#5b8fd6'
+			: role === 'ai' ? C.primaryDark
+				: role === 'err' ? '#c0392b' : '#8c9aad';
+		return st({
+			width: '28px', height: '28px', borderRadius: '9px', flex: '0 0 auto',
+			background: bg, color: '#fff', display: 'flex',
+			alignItems: 'center', justifyContent: 'center', fontSize: '13px'
+		});
+	}
+
+	UI.appendMsg = function (role, text, opts) {
+		if (!UI.dlgPanel) return null;
 		var $ = EAI.jq;
-		var box = $('#eai-chat', $(dlgPanel));
-		if (!box.length) return;
-		var div = $('<div class="eai-msg eai-' + role + '"></div>');
-		$('<span class="eai-role"></span>').text(role === 'user' ? 'You' :
-			(role === 'ai' ? 'AI' : 'System')).appendTo(div);
-		if (html) div.append(html); else div.append(document.createTextNode(text || ''));
-		box.append(div);
-		box.scrollTop(box[0].scrollHeight);
-		return div;
+		var box = $('#eai-chat', UI.dlgPanel);
+		if (!box.length) return null;
+		opts = opts || {};
+
+		var icon = role === 'user' ? '&#128100;' : role === 'ai' ? '&#129302;' : role === 'err' ? '!' : 'i';
+		var who = role === 'user' ? '你' : role === 'ai' ? 'AI' : role === 'err' ? '错误' : '系统';
+
+		var el = $('<div class="eai-msg">');
+		el.attr('style', st({ display: 'flex', gap: '10px', marginBottom: '11px', alignItems: 'flex-start' }));
+		el.append('<div style="' + avatarStyle(role) + '">' + icon + '</div>');
+
+		var body = $('<div style="' + st({ flex: '1 1 auto', minWidth: '0' }) + '"></div>');
+		body.append('<div style="' + st({ fontSize: '11px', color: C.muted, marginBottom: '3px' }) + '">' + who + '</div>');
+		var bubble = $('<div class="eai-bubble" style="' + bubbleStyle(role) + '"></div>');
+		if (opts.html) bubble.html(opts.html);
+		else bubble.text(text || '');
+
+		body.append(bubble);
+		el.append(body);
+		box.append(el);
+		box[0].scrollTop = box[0].scrollHeight;
+		return bubble;
 	};
 
-	UI.appendLog = function (line, level) {
-		if (!dlgPanel) return;
+	UI.appendTool = function (name, args) {
+		if (!UI.dlgPanel) return null;
 		var $ = EAI.jq;
-		var box = $('#eai-log', $(dlgPanel));
+		var box = $('#eai-chat', UI.dlgPanel);
+		if (!box.length) return null;
+
+		var el = $('<div class="eai-tool">');
+		el.attr('style', st({ display: 'flex', gap: '10px', marginBottom: '9px', alignItems: 'flex-start' }));
+		el.append('<div style="' + st({
+			width: '28px', height: '28px', borderRadius: '9px', background: C.green,
+			color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+			fontSize: '12px', flex: '0 0 auto'
+		}) + '">&#9881;</div>');
+
+		var chip = $('<div class="eai-chip"></div>');
+		chip.attr('style', st({
+			fontSize: '12px', color: C.green, background: '#e8f7f4', border: '1px solid #bfe6df',
+			borderRadius: '8px', padding: '5px 11px', maxWidth: '100%',
+			overflow: 'hidden', textOverflow: 'ellipsis'
+		}));
+		chip.append('<b>' + U.esc(name) + '</b> ');
+		var a = args === undefined ? '' : U.fmt(args, 150).replace(/\s+/g, ' ');
+		chip.append('<span style="color:#5f7a76;font-family:' + MONO + ';font-size:11px">' +
+			U.esc(a) + '</span>');
+
+		el.append(chip);
+		box.append(el);
+		box[0].scrollTop = box[0].scrollHeight;
+		return chip;
+	};
+
+	UI.appendLog = function (line) {
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		var box = $('#eai-log', UI.dlgPanel);
 		if (!box.length) return;
 		box.append(document.createTextNode(line + '\n'));
-		box.scrollTop(box[0].scrollHeight);
+		box[0].scrollTop = box[0].scrollHeight;
 	};
 
+	/**
+	 * A review / analysis produced a report: drop a card into the chat stream.
+	 * The card offers a preview dialog and direct downloads; there is no
+	 * separate "report" tab any more.
+	 */
 	UI.showReport = function (markdown) {
 		lastReport = markdown || '';
-		if (!dlgPanel) return;
-		var $ = EAI.jq;
-		var box = $('#eai-report', $(dlgPanel));
-		var html = linkifyDesignators(mdToHtml(lastReport));
-		box.html(html);
-		box.off('click.eai').on('click.eai', '.eai-locate', function (e) {
-			e.preventDefault();
-			var pre = $(this).data('pre');
-			var ok = EAI.eda.locateComponent(pre) || EAI.eda.locateFootprint(pre);
-			UI.appendMsg('sys', ok ? ('Located ' + pre) : ('Could not locate ' + pre));
-		});
+		if (!lastReport || !UI.dlgPanel) return null;
+		return UI.appendReportCard(lastReport);
 	};
 
-	/* ------------------------------------------------------------ chat --- */
-
-	UI.sendInput = function () {
+	UI.appendReportCard = function (md) {
 		var $ = EAI.jq;
-		if (!dlgPanel) return;
-		var ta = $('#eai-input', $(dlgPanel));
+		var box = $('#eai-chat', UI.dlgPanel);
+		if (!box.length) return null;
+
+		var size = (md.length / 1024).toFixed(1) + ' KB';
+
+		var card = $('<div data-eai-card="1"></div>');
+		card.attr('style', st({
+			display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '12px'
+		}));
+		card.append('<div style="' + st({
+			width: '28px', height: '28px', borderRadius: '9px', background: '#b45309',
+			color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+			fontSize: '13px', flex: '0 0 auto'
+		}) + '">&#128196;</div>');
+
+		var body = $('<div></div>');
+		body.attr('style', st({
+			flex: '1 1 auto', minWidth: '0',
+			border: '1px solid #f0d9a8', borderRadius: '12px', padding: '11px 13px',
+			background: 'linear-gradient(180deg,#fffdf6 0%,#fff8e8 100%)'
+		}));
+		body.append('<div style="' + st({
+			fontWeight: '600', color: '#8a5a12', fontSize: '13px'
+		}) + '">评审报告已生成</div>');
+		body.append('<div style="' + st({
+			fontSize: '11.5px', color: '#9a7b45', marginTop: '2px'
+		}) + '">' + size + ' · 可在弹窗中预览，或直接下载</div>');
+
+		var row = $('<div style="' + st({ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }) + '"></div>');
+		row.append('<button class="eai-btn" data-eai-act="preview" style="' + st({
+			background: '#b45309', border: '1px solid #b45309', color: '#fff',
+			borderRadius: '8px', padding: '6px 15px', fontSize: '12px', fontFamily: FONT,
+			fontWeight: '600'
+		}) + '">预览报告</button>');
+		row.append('<button class="eai-btn" data-eai-act="md" style="' + ghostBtn() + '">下载 Markdown</button>');
+		row.append('<button class="eai-btn" data-eai-act="html" style="' + ghostBtn() + '">下载 HTML</button>');
+		body.append(row);
+
+		card.append(body);
+		card.data('eai-report', md);
+		box.append(card);
+		box[0].scrollTop = box[0].scrollHeight;
+		return card;
+	};
+
+	/** Stand-alone preview window (created once, re-used afterwards). */
+	UI.openReportDialog = function (md) {
+		var $ = EAI.jq;
+		var content = md || lastReport || '';
+		UI._previewMd = content;
+
+		if (!UI.dlgReport) {
+			var html = styleBlock() + '<div class="eai-root" style="' + st({
+				fontFamily: FONT, fontSize: '13px', color: C.text, background: C.bg,
+				boxSizing: 'border-box', width: '100%'
+			}) + '">' +
+				'<div id="eai-report-body" style="' + st({
+					padding: '18px 22px', boxSizing: 'border-box', width: '100%'
+				}) + '"></div>' +
+				'<div style="' + st({
+					padding: '10px 22px', borderTop: '1px solid ' + C.border,
+					background: C.surface, display: 'flex', gap: '8px'
+				}) + '">' +
+				'<button class="eai-btn" data-eai-dl="md" style="' + ghostBtn() + '">下载 Markdown</button>' +
+				'<button class="eai-btn" data-eai-dl="html" style="' + ghostBtn() + '">下载 HTML</button>' +
+				'</div></div>';
+
+			var ctlR = EAI.dlg({
+				title: '评审报告', width: 780, height: 660,
+				modal: true, content: html
+			});
+			UI.dlgReportCtl = ctlR;
+			UI.dlgReport = ctlR ? ctlR.el : null;
+			if (UI.dlgReport) {
+				UI.dlgReport.on('click', '[data-eai-dl]', function (e) {
+					e.preventDefault();
+					UI.downloadReport($(this).attr('data-eai-dl'));
+				});
+			}
+		}
+		if (!UI.dlgReport) return null;
+		$('#eai-report-body', UI.dlgReport).html(linkify(UI.mdToHtml(content)));
+		try { UI.dlgReportCtl.open(); } catch (e) { /* ignore */ }
+		return UI.dlgReport;
+	};
+
+	UI.downloadReport = function (kind) {
+		var md = UI._previewMd || lastReport || '';
+		if (kind === 'html') {
+			var html = '<!doctype html><meta charset="utf-8"><title>AI 评审报告</title>' +
+				'<body style="font-family:\'Microsoft YaHei\',sans-serif;max-width:1040px;' +
+				'margin:0 auto;padding:32px;line-height:1.7;color:#1f2733">' +
+				UI.mdToHtml(md) + '</body>';
+			U.download('ai-report-' + Date.now() + '.html', html, 'text/html;charset=utf-8');
+		} else {
+			U.download('ai-report-' + Date.now() + '.md', md);
+		}
+	};
+
+	/* ------------------------------------------------------------- send -- */
+
+	UI.send = function () {
+		if (busy) { UI.appendMsg('sys', '正在处理，请稍候或点「停止」。'); return; }
+		if (!UI.dlgPanel) { UI.openPanel(); return; }
+		var $ = EAI.jq;
+
+		var ta = $('#eai-input', UI.dlgPanel);
 		var text = (ta.val() || '').trim();
-		if (!text) return;
+		if (!text && !pendingImage) return;
 
 		if (!EAI.cfg.ready()) {
-			UI.appendMsg('err', U.t('eai.hint.noKey', 'Please configure the API first.'));
+			UI.appendMsg('err', '还没有配置模型。请先在「设置」里填写接口地址、API Key 和模型名。');
 			UI.openSettings();
 			return;
 		}
+
+		var userMsg = { role: 'user', content: [] };
+		if (text) userMsg.content.push({ type: 'text', text: text });
+		if (pendingImage) {
+			userMsg.content.push({
+				type: 'image', mediaType: pendingImage.mediaType, data: pendingImage.base64
+			});
+		}
+
 		ta.val('');
-		UI.appendMsg('user', text);
-		var msgs = history.concat([{ role: 'user', content: [{ type: 'text', text: text }] }]);
-		UI.ask(msgs);
+		pendingImage = null;
+		$('#eai-imgbadge', UI.dlgPanel).css('display', 'none');
+
+		UI.appendMsg('user', text || '(图片)');
+		history.push(userMsg);
+		UI.runAgent(history);
 	};
 
-	/** Sends a message list to the model and streams the answer into the chat. */
-	UI.ask = function (messages) {
-		var cfg = EAI.cfg.current();
+	UI.runAgent = function (msgs) {
 		var $ = EAI.jq;
-		var btn = dlgPanel ? $('#eai-send', $(dlgPanel)) : null;
-		if (btn) btn.prop('disabled', true);
+		busy = true;
+		$('#eai-send', UI.dlgPanel).prop('disabled', true).css('opacity', '.55');
+		$('#eai-stop', UI.dlgPanel).css('display', 'inline-block');
 
-		var node = UI.appendMsg('ai', '');
-		var buf = '';
-		var acc = '';
-		if (node) {
-			var span = $('<span></span>').appendTo(node);
-			node.find('.eai-role').after('');
-			acc = span;
-		}
+		var cfg = EAI.cfg.current();
+		var system = {
+			role: 'system',
+			content: [{
+				type: 'text',
+				text: [
+					'你是一位资深硬件工程师，作为插件运行在 EasyEDA（嘉立创EDA 标准版）里。',
+					'你可以通过工具直接读取和修改用户当前打开的文档。',
+					'当前文档类型：' + EAI.eda.docKindLabel() + '。',
+					'回答语言：' + (cfg.language === 'en' ? 'English' : '中文') + '。',
+					'规则：',
+					'1. 需要数据时先调用工具，不要凭空猜测电路内容；',
+					'2. 提到元件时使用准确位号（R12、C3、U1），这样用户能点它定位；',
+					'3. 修改文档前先说明你打算改什么；修改后用简短话语汇报；',
+					'4. 用 Markdown 输出，网表/BOM 用表格；评审结论按「严重 / 一般 / 建议」分级。'
+				].join('\n')
+			}]
+		};
 
-		function onDelta(delta) {
-			buf += delta;
-			if (acc) acc.text(buf);
-			if (dlgPanel) {
-				var box = $('#eai-chat', $(dlgPanel));
-				box.scrollTop(box[0].scrollHeight);
+		var aiBubble = null;
+		var lastText = '';
+
+		EAI.agent.run({
+			messages: [system].concat(msgs),
+			onEvent: function (ev) {
+				if (!UI.dlgPanel) return;
+				if (ev.type === 'text' && ev.text) {
+					lastText = ev.text;
+					if (!aiBubble) aiBubble = UI.appendMsg('ai', '', { html: UI.mdToHtml(ev.text) });
+					else aiBubble.html(UI.mdToHtml(ev.text));
+					var box = $('#eai-chat', UI.dlgPanel);
+					if (box.length) box[0].scrollTop = box[0].scrollHeight;
+				} else if (ev.type === 'tool') {
+					UI.appendTool(ev.name, ev.args);
+				} else if (ev.type === 'image') {
+					UI.appendMsg('sys', '已截取画布 ' + ev.width + 'x' + ev.height + ' 并发送给模型。');
+				}
 			}
-		}
-
-		/* remember the last user turn so the chat stays coherent */
-		var lastUser = null;
-		for (var mi = messages.length - 1; mi >= 0; mi--) {
-			if (messages[mi].role === 'user') { lastUser = messages[mi]; break; }
-		}
-		if (lastUser && history.indexOf(lastUser) < 0) history.push(lastUser);
-
-		return EAI.llm.chat(cfg, messages, { onDelta: onDelta })
-			.then(function (answer) {
-				var text = answer || buf;
-				if (acc) acc.text(text);
+		}).then(function (r) {
+			var text = r.text || lastText;
+			if (text) {
 				history.push({ role: 'assistant', content: [{ type: 'text', text: text }] });
-				lastReport = text;
-				return text;
-			})
-			.catch(function (err) {
-				var msg = err && err.message ? err.message : String(err);
-				if (err && err.isCors) {
-					msg += '\n' + U.t('eai.hint.cors', 'Please check the endpoint / CORS settings.');
-				}
-				if (acc) acc.text('');
-				UI.appendMsg('err', msg);
-				EAI.log('request failed: ' + msg, 'error');
-			})
-			.then(function () {
-				if (btn) btn.prop('disabled', false);
-			});
-	};
-
-	UI.history = history;
-
-	/* --------------------------------------------------------- features -- */
-
-	function systemPrompt(role) {
-		var lang = (EAI.cfg.current().language === 'en')
-			? 'Answer in English.' : '请用中文回答。';
-		return [
-			'You are an experienced electronic hardware engineer and PCB reviewer ' +
-			'assisting inside EasyEDA (嘉立创EDA 标准版).',
-			lang,
-			'Be concrete and technical. Point out real risks (power, decoupling, ' +
-			'signal integrity, ERC/DRC issues, missing ratings, wrong footprints, ' +
-			'dangling nets, floating pins, missing pull-ups …).',
-			'When you mention a component always use its exact designator ' +
-			'(for example R12, C3, U1) so the user can locate it.',
-			'Use Markdown. Prefer tables for net lists and BOM summaries.',
-			role ? ('Current task: ' + role) : ''
-		].filter(Boolean).join('\n');
-	}
-
-	function userText(text) {
-		return [{ role: 'user', content: [{ type: 'text', text: text }] }];
-	}
-
-	/** Renders the net list as a compact, model friendly text. */
-	function netlistText(nl, components) {
-		var lines = [];
-		lines.push('## Net list');
-		lines.push('nets: ' + nl.stats.nets + ', named: ' + nl.stats.namedNets +
-			', pins: ' + nl.stats.pins + ', sheets: ' + nl.stats.sheets);
-		lines.push('');
-		nl.nets.forEach(function (n) {
-			var pins = n.pins.map(function (p) {
-				return p.designator + '.' + p.number +
-					(p.name ? '(' + p.name + ')' : '');
-			});
-			lines.push('- **' + n.name + '** [' + n.pins.length + ' pins]' +
-				(n.conflict ? ' (NAME CONFLICT: ' + n.labels.map(function (l) { return l.name; }).join(', ') + ')' : '') +
-				': ' + (pins.join(', ') || '(no pins)'));
-		});
-
-		lines.push('');
-		lines.push('## Components');
-		components.forEach(function (c) {
-			lines.push('- ' + c.designator + ' | ' + (c.name || '') + ' | ' +
-				(c.package || '') + ' | ' + (c.value || '') + ' | pins=' + c.pins.length);
-		});
-		return lines.join('\n');
-	}
-
-	function bomText(bom, components) {
-		var lines = [];
-		lines.push('## BOM');
-		lines.push('| Designators | Qty | Package | Value | Name |');
-		lines.push('|---|---|---|---|---|');
-		bom.forEach(function (b) {
-			lines.push('| ' + b.designators.join(', ') + ' | ' + b.qty + ' | ' +
-				(b.package || '') + ' | ' + (b.value || '') + ' | ' + (b.name || '') + ' |');
-		});
-		lines.push('');
-		lines.push('total lines: ' + bom.length + ', total components: ' + components.length);
-		return lines.join('\n');
-	}
-
-	function requireDoc() {
-		var dt = EAI.eda.docType();
-		if (!dt) {
-			UI.appendMsg('err', U.t('eai.hint.noDoc', 'No document is open.'));
-			return null;
-		}
-		return dt;
-	}
-
-	UI.runAction = function (act) {
-		switch (act) {
-			case 'review': return UI.reviewNetlist();
-			case 'bom': return UI.reviewBom();
-			case 'snapshot': return UI.reviewSnapshot();
-			case 'edit': return UI.editValues();
-			case 'generate': return UI.generateSchematic();
-			case 'symbol': return UI.symbolFromImage();
-			case 'clear':
-				if (dlgPanel) EAI.jq('#eai-chat', EAI.jq(dlgPanel)).empty();
-				lastReport = '';
-				return null;
-		}
-		return null;
-	};
-
-	/* --- 1. netlist review ------------------------------------------------ */
-
-	UI.reviewNetlist = function () {
-		var dt = requireDoc();
-		if (!dt) return null;
-
-		var sheets = EAI.eda.projectSchematics();
-		if (!sheets.length) {
-			UI.appendMsg('err', 'No schematic found in the current project.');
-			return null;
-		}
-		UI.appendMsg('sys', 'Analysing ' + sheets.length + ' sheet(s)…');
-
-		var nl = EAI.eda.netlist(sheets);
-		var comps = [];
-		sheets.forEach(function (s) {
-			comps = comps.concat(EAI.eda.components(s.json));
-		});
-
-		var text = netlistText(nl, comps);
-		UI.appendMsg('user', 'Please review the net list of this project and report ' +
-			'ERC problems, design risks and suggestions.');
-
-		return UI.ask([
-			{ role: 'system', content: [{ type: 'text', text: systemPrompt('schematic / net list review') }] },
-			{ role: 'user', content: [{ type: 'text', text: text }] }
-		]).then(function (answer) {
-			UI.showReport(answer);
-			UI.lastNetlist = nl;
-			return answer;
-		});
-	};
-
-	/* --- 2. BOM analysis -------------------------------------------------- */
-
-	UI.reviewBom = function () {
-		var dt = requireDoc();
-		if (!dt) return null;
-		var json = EAI.eda.activeJson();
-		var comps = EAI.eda.components(json);
-		if (!comps.length) {
-			UI.appendMsg('err', 'No component found in the current document.');
-			return null;
-		}
-		var bom = EAI.eda.bom(comps);
-		UI.appendMsg('user', 'Please analyse this BOM and report: missing values, ' +
-			'wrong or missing footprints, unpriced / unavailable parts, ' +
-			'duplicates that could be merged, and assembly or sourcing advice.');
-
-		return UI.ask([
-			{ role: 'system', content: [{ type: 'text', text: systemPrompt('BOM analysis') }] },
-			{ role: 'user', content: [{ type: 'text', text: bomText(bom, comps) }] }
-		]).then(function (answer) {
-			UI.showReport(answer);
-			UI.lastBom = bom;
-			return answer;
-		});
-	};
-
-	/* --- 3. snapshot review ----------------------------------------------- */
-
-	UI.reviewSnapshot = function () {
-		var dt = requireDoc();
-		if (!dt) return null;
-		var svg = EAI.eda.svg(50);
-		if (!svg) {
-			UI.appendMsg('err', 'Could not export the canvas.');
-			return null;
-		}
-		UI.appendMsg('sys', 'Rendering the canvas…');
-		return EAI.eda.svgToPng(svg, 1800).then(function (img) {
-			UI.appendMsg('user', 'Please review this drawing of the ' +
-				(dt === 'pcb' ? 'PCB' : 'schematic') + ' and report layout, ' +
-				'readability and wiring problems.');
-			return UI.ask([
-				{ role: 'system', content: [{ type: 'text', text: systemPrompt('drawing / layout review') }] },
-				{
-					role: 'user', content: [
-						{ type: 'text', text: 'Here is the current ' + (dt === 'pcb' ? 'PCB' : 'schematic') + ' drawing:' },
-						{ type: 'image', mediaType: 'image/png', data: img.base64 }
-					]
-				}
-			]).then(function (answer) {
-				UI.showReport(answer);
-				return answer;
-			});
-		}).catch(function (e) {
-			UI.appendMsg('err', 'Rendering failed: ' + e.message);
-		});
-	};
-
-	/* --- 4. batch edit ---------------------------------------------------- */
-
-	UI.editValues = function () {
-		var dt = requireDoc();
-		if (!dt) return null;
-		var json = EAI.eda.activeJson();
-		var comps = EAI.eda.components(json);
-		if (!comps.length) {
-			UI.appendMsg('err', 'No component found in the current document.');
-			return null;
-		}
-		var lines = comps.map(function (c) {
-			return '- ' + c.designator + ' | name=' + (c.name || '') +
-				' | package=' + (c.package || '') +
-				' | value=' + (c.value || '') +
-				' | params=' + U.fmt(c.params);
-		});
-		UI.appendMsg('user', 'Please suggest corrected values and designators for the ' +
-			'components below. Answer with a JSON array of ' +
-			'{"designator":"R1","value":"10k","parameter":"value"} objects ' +
-			'for every component that needs a change, and nothing else.');
-
-		return UI.ask([
-			{ role: 'system', content: [{ type: 'text', text: systemPrompt('component value correction') }] },
-			{ role: 'user', content: [{ type: 'text', text: '## Components\n' + lines.join('\n') }] }
-		]).then(function (answer) {
-			UI.showReport(answer);
-			UI.pendingEdits = UI.parseEdits(answer);
-			UI.appendMsg('sys', UI.pendingEdits.length
-				? ('Found ' + UI.pendingEdits.length + ' suggested change(s) — ' +
-					'open the Report tab and press "Apply suggested changes".')
-				: 'No change could be parsed from the answer.');
-			return answer;
-		});
-	};
-
-	/** Extracts the JSON array of edits out of a model answer. */
-	UI.parseEdits = function (answer) {
-		var text = String(answer || '');
-		var m = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-		var body = m ? m[1] : text;
-		var start = body.indexOf('[');
-		var end = body.lastIndexOf(']');
-		if (start < 0 || end <= start) return [];
-		try {
-			var arr = JSON.parse(body.slice(start, end + 1));
-			return Array.isArray(arr) ? arr.filter(function (x) { return x && x.designator; }) : [];
-		} catch (e) {
-			return [];
-		}
-	};
-
-	UI.applyPendingEdits = function () {
-		var edits = UI.pendingEdits || [];
-		if (!edits.length && UI.pendingPlan) {
-			var plan = EAI.actions.applyPlan(UI.pendingPlan);
-			var done = plan.components.length + plan.wires.length +
-				plan.netLabels.length + plan.junctions.length;
-			UI.appendMsg(done ? 'sys' : 'err',
-				done ? ('Placed ' + plan.components.length + ' component(s), ' +
-					plan.wires.length + ' wire(s), ' + plan.netLabels.length +
-					' net label(s).')
-					: 'Nothing could be placed.');
-			plan.errors.forEach(function (e) { UI.appendMsg('err', e); });
-			return plan;
-		}
-		if (!edits.length) {
-			UI.appendMsg('err', 'There is nothing to apply yet.');
-			return null;
-		}
-		var res = EAI.actions.applyEdits(edits);
-		res.forEach(function (r) {
-			if (r.valueResult && r.valueResult.ok) {
-				UI.appendMsg('sys', 'Updated ' + r.designator + ' → ' + r.valueResult.value);
-			} else if (r.valueResult && r.valueResult.error) {
-				UI.appendMsg('err', r.designator + ': ' + r.valueResult.error);
+				if (!aiBubble) UI.appendMsg('ai', '', { html: UI.mdToHtml(text) });
+				/* only the review / analysis features produce a report card */
+				if (UI._presetReport) UI.showReport(text);
 			}
-			if (r.designatorResult && r.designatorResult.ok) {
-				UI.appendMsg('sys', 'Renamed ' + r.designator + ' → ' + r.designatorResult.newDesignator);
+			if (r.aborted) UI.appendMsg('sys', '已停止。');
+			else if (!text) UI.appendMsg('err', '模型没有返回内容。');
+		}).catch(function (err) {
+			var msg = err && err.message ? err.message : String(err);
+			UI.appendMsg('err', msg);
+			if (err && err.isCors) {
+				UI.appendMsg('sys', '这是浏览器跨域（CORS）限制。请确认接口地址允许跨域访问，或改用官方域名。');
 			}
+			EAI.log('agent failed: ' + msg, 'error');
+		}).then(function () {
+			busy = false;
+			UI._presetReport = false;
+			if (UI.dlgPanel) {
+				$('#eai-send', UI.dlgPanel).prop('disabled', false).css('opacity', '1');
+				$('#eai-stop', UI.dlgPanel).css('display', 'none');
+			}
+			UI.refreshStatus();
 		});
-		return res;
 	};
 
-	/* --- 5. generate a schematic ------------------------------------------ */
+	/* --------------------------------------------------------- settings -- */
 
-	UI.generateSchematic = function () {
-		var dt = requireDoc();
-		if (!dt) return null;
+	var PROVIDERS = [
+		{ id: 'openai', label: 'OpenAI', protocol: 'openai', base: 'https://api.openai.com/v1', model: 'gpt-4o' },
+		{ id: 'anthropic', label: 'Anthropic Claude', protocol: 'anthropic', base: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5' },
+		{ id: 'deepseek', label: 'DeepSeek', protocol: 'openai', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+		{ id: 'moonshot', label: 'Moonshot / Kimi', protocol: 'openai', base: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+		{ id: 'qwen', label: 'DashScope Qwen', protocol: 'openai', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+		{ id: 'zhipu', label: 'BigModel GLM', protocol: 'openai', base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-plus' },
+		{ id: 'siliconflow', label: 'SiliconFlow', protocol: 'openai', base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct' },
+		{ id: 'openrouter', label: 'OpenRouter', protocol: 'openai', base: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.5' },
+		{ id: 'ollama', label: '本地 Ollama', protocol: 'openai', base: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b' },
+		{ id: 'azure', label: 'Azure OpenAI', protocol: 'openai', base: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>', model: 'gpt-4o' },
+		{ id: 'custom-openai', label: '自定义 OpenAI 兼容接口', protocol: 'openai', base: 'https://<your-gateway>/v1', model: '' },
+		{ id: 'custom-anthropic', label: '自定义 Claude 兼容接口', protocol: 'anthropic', base: 'https://<your-gateway>/v1', model: 'claude-sonnet-4-5' }
+	];
 
-		var requirement = pendingImage ? '' : '';
-		UI.appendMsg('user', 'Please design a schematic for the following requirement ' +
-			'and answer with a JSON object:\n' +
-			'{"components":[{"part":"R","x":0,"y":0,"rotation":0,"value":"10k"}],' +
-			'"wires":[[{"x":0,"y":0},{"x":100,"y":0}]],' +
-			'"netLabels":[{"x":100,"y":0,"name":"VCC"}],' +
-			'"junctions":[{"x":50,"y":0}]}\n' +
-			'Allowed parts: R, C, L, D, LED, SW, GENERIC (use "pinCount" for GENERIC). ' +
-			'Coordinates are in schematic units (1 unit = 10 mil). ' +
-			'Requirement: ');
+	function labelCss() {
+		return st({
+			display: 'block', fontSize: '12.5px', fontWeight: '600',
+			color: '#3a4a63', marginBottom: '6px'
+		});
+	}
 
-		var ta = dlgPanel ? EAI.jq('#eai-input', EAI.jq(dlgPanel)) : null;
-		if (ta && ta.val()) {
-			requirement = ta.val();
-			ta.val('');
+	function inputCss() {
+		return st({
+			width: '100%', boxSizing: 'border-box', height: '36px', padding: '0 11px',
+			border: '1px solid #d8e0ec', borderRadius: '9px', fontSize: '12.5px',
+			fontFamily: FONT, color: C.text, background: '#fff', outline: 'none'
+		});
+	}
+
+	function field(label, inner, note) {
+		return '<div style="' + st({ marginBottom: '13px' }) + '">' +
+			'<label style="' + labelCss() + '">' + label + '</label>' + inner +
+			(note ? '<div style="' + st({
+				fontSize: '11px', color: C.muted, marginTop: '5px',
+				wordBreak: 'break-all', lineHeight: '1.5'
+			}) + '">' + note + '</div>' : '') +
+			'</div>';
+	}
+
+	function numField(label, id, value, step, min) {
+		return '<div style="' + st({ flex: '1 1 0', minWidth: '0' }) + '">' +
+			'<label style="' + labelCss() + '">' + label + '</label>' +
+			'<input class="eai-in" type="number" id="' + id + '" value="' + U.esc(String(value)) + '"' +
+			' step="' + step + '" min="' + min + '" style="' + inputCss() + '">' +
+			'</div>';
+	}
+
+	function sectionTitle(text, hint) {
+		return '<div style="' + st({
+			display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 13px'
+		}) + '">' +
+			'<span style="' + st({
+				width: '3px', height: '14px', background: C.primary,
+				borderRadius: '2px', display: 'inline-block', flex: '0 0 auto'
+			}) + '"></span>' +
+			'<span style="' + st({ fontSize: '13px', fontWeight: '600', color: C.primaryDark }) + '">' +
+			text + '</span>' +
+			(hint ? '<span style="' + st({ fontSize: '11px', color: C.muted }) + '">' + hint + '</span>' : '') +
+			'</div>';
+	}
+
+	function primaryBtn(text, id) {
+		return '<button id="' + id + '" class="eai-btn" style="' + st({
+			background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
+			borderRadius: '9px', padding: '9px 24px', fontSize: '12.5px',
+			fontWeight: '600', fontFamily: FONT, boxShadow: '0 2px 8px rgba(47,111,191,.28)'
+		}) + '">' + text + '</button>';
+	}
+
+	UI.openSettings = function () {
+		injectStyle();
+		var $ = EAI.jq;
+
+		if (UI.dlgSettings) {
+			try { UI.dlgSettingsCtl.open(); } catch (e) { /* ignore */ }
+			return UI.dlgSettings;
 		}
 
-		return UI.ask([
-			{ role: 'system', content: [{ type: 'text', text: systemPrompt('schematic generation') }] },
-			{ role: 'user', content: [{ type: 'text', text: 'Design a schematic for: ' + requirement }] }
-		]).then(function (answer) {
-			UI.showReport(answer);
-			UI.pendingPlan = UI.parsePlan(answer);
-			UI.appendMsg('sys', UI.pendingPlan
-				? 'A plan was parsed — open the Report tab and press "Apply suggested changes".'
-				: 'No plan could be parsed from the answer.');
-			return answer;
+		var cfg = EAI.cfg.current();
+		var opts = '<option value="">— 自定义 —</option>';
+		PROVIDERS.forEach(function (p) {
+			opts += '<option value="' + p.id + '">' + U.esc(p.label) + '</option>';
 		});
-	};
-
-	UI.parsePlan = function (answer) {
-		var text = String(answer || '');
-		var m = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-		var body = m ? m[1] : text;
-		var start = body.indexOf('{');
-		var end = body.lastIndexOf('}');
-		if (start < 0 || end <= start) return null;
-		try {
-			var obj = JSON.parse(body.slice(start, end + 1));
-			return (obj && (obj.components || obj.wires || obj.netLabels)) ? obj : null;
-		} catch (e) { return null; }
-	};
-
-	/* --- 6. symbol from an image ------------------------------------------ */
-
-	UI.symbolFromImage = function () {
-		var dt = requireDoc();
-		if (!dt) return null;
-
-		if (!pendingImage) {
-			UI.appendMsg('err', 'Attach an image first (button "Attach image" in the header).');
-			return null;
+		function opt(v, t, cur) {
+			return '<option value="' + v + '"' + (String(cur) === v ? ' selected' : '') + '>' + t + '</option>';
 		}
-		UI.appendMsg('user', 'Please analyse this symbol picture and answer with a JSON ' +
-			'object describing the symbol:\n' +
-			'{"name":"R","pre":"R","package":"0603",' +
-			'"pins":[{"number":"1","name":"","x":-15,"y":0,"dotX":-25,"dotY":0,' +
-			'"path":"h -10","electric":"passive"}],' +
-			'"texts":[{"x":0,"y":-10,"string":"R"}]}\n' +
-			'Coordinates are relative to the symbol origin in schematic units ' +
-			'(1 unit = 10 mil). Pins on the left use "h -10", pins on the right "h 10".');
 
-		return UI.ask([
-			{ role: 'system', content: [{ type: 'text', text: systemPrompt('symbol recognition from an image') }] },
-			{
-				role: 'user', content: [
-					{ type: 'text', text: 'Recognise this electronic symbol:' },
-					{ type: 'image', mediaType: pendingImage.mediaType, data: pendingImage.base64 }
-				]
-			}
-		]).then(function (answer) {
-			UI.showReport(answer);
-			UI.pendingSymbol = UI.parseSymbol(answer);
-			if (UI.pendingSymbol) {
-				var x = UI.pendingSymbol.x || 400;
-				var y = UI.pendingSymbol.y || 300;
-				var res = EAI.actions.createSymbol(UI.pendingSymbol);
-				UI.appendMsg(res.ok ? 'sys' : 'err',
-					res.ok ? ('Symbol placed at ' + res.x + ',' + res.y)
-						: ('Creating the symbol failed: ' + res.error));
-			} else {
-				UI.appendMsg('err', 'No symbol description could be parsed from the answer.');
-			}
-			return answer;
+		var html = styleBlock() + '<div class="eai-root" style="' + st({
+			fontFamily: FONT, fontSize: '13px', color: C.text, background: C.bg,
+			boxSizing: 'border-box', width: '100%', overflowX: 'hidden'
+		}) + '">' +
+
+			/* ---------------- model access ---------------- */
+			'<div style="' + st({ padding: '18px 22px 2px' }) + '">' +
+			sectionTitle('模型接入') +
+
+			field('接口协议',
+				'<select id="eai-provider" class="eai-in" style="' + inputCss() + '">' +
+				opt('openai', 'OpenAI 兼容（/chat/completions）', cfg.provider) +
+				opt('anthropic', 'Anthropic（/messages）', cfg.provider) +
+				'</select>',
+				'<span id="eai-provider-note"></span>') +
+
+			field('供应商快捷填入',
+				'<select id="eai-preset" style="' + inputCss() + '">' + opts + '</select>',
+				'只帮你填地址和模型，下面的内容都可以手动改') +
+
+			field('接口地址 Base URL <span style="' + st({
+				fontSize: '10.5px', fontWeight: '400', color: C.muted
+			}) + '">（可完全自定义）</span>',
+				'<input class="eai-in" type="text" id="eai-baseurl" value="' + U.esc(cfg.baseUrl) +
+				'" placeholder="https://api.openai.com/v1" style="' + inputCss() + '">',
+				'实际请求：<code id="eai-endpoint" style="' + st({
+					background: '#eef2f8', padding: '2px 6px', borderRadius: '5px',
+					fontFamily: MONO, fontSize: '11px', color: '#2f5fa8'
+				}) + '">-</code>') +
+
+			field('API Key',
+				'<input class="eai-in" type="password" id="eai-apikey" value="' + U.esc(cfg.apiKey) +
+				'" placeholder="sk-..." style="' + inputCss() + '">',
+				'保存在扩展配置与本机，不会上传到任何第三方') +
+
+			field('模型 Model',
+				'<input class="eai-in" type="text" id="eai-model" value="' + U.esc(cfg.model) +
+				'" placeholder="gpt-4o / claude-sonnet-4-5 / deepseek-chat" style="' + inputCss() + '">') +
+			'</div>' +
+
+			/* ---------------- generation ---------------- */
+			'<div style="' + st({ height: '1px', background: C.border, margin: '4px 22px 16px' }) + '"></div>' +
+			'<div style="' + st({ padding: '0 22px 2px' }) + '">' +
+			sectionTitle('生成参数') +
+
+			'<div style="' + st({ display: 'flex', gap: '12px', marginBottom: '13px' }) + '">' +
+			numField('Temperature', 'eai-temp', cfg.temperature, '0.1', '0') +
+			numField('Max tokens', 'eai-maxtok', cfg.maxTokens, '512', '256') +
+			numField('超时（秒）', 'eai-timeout', cfg.timeout, '30', '20') +
+			'</div>' +
+
+			'<div style="' + st({ display: 'flex', gap: '12px', marginBottom: '13px' }) + '">' +
+			'<div style="' + st({ flex: '1 1 0', minWidth: '0' }) + '">' +
+			'<label style="' + labelCss() + '">回答语言</label>' +
+			'<select id="eai-lang" class="eai-in" style="' + inputCss() + '">' +
+			opt('zh', '中文', cfg.language) + opt('en', 'English', cfg.language) +
+			'</select></div>' +
+			numField('最大工具步数', 'eai-steps', cfg.maxSteps, '1', '1') +
+			'<div style="' + st({ flex: '1 1 0' }) + '"></div>' +
+			'</div>' +
+
+			field('额外请求头',
+				'<input class="eai-in" type="text" id="eai-headers" value="' + U.esc(cfg.extraHeaders) +
+				'" placeholder="X-Custom: 1" style="' + inputCss() + '">',
+				'可选，一行一个 Key: Value') +
+			'</div>' +
+
+			/* ---------------- diagnostics ---------------- */
+			'<div style="' + st({ height: '1px', background: C.border, margin: '2px 22px 16px' }) + '"></div>' +
+			'<div style="' + st({ padding: '0 22px 16px' }) + '">' +
+			sectionTitle('诊断', '反馈问题时请附上这段信息') +
+			'<div id="eai-diag" style="' + st({
+				fontFamily: MONO, fontSize: '11px', background: C.surface,
+				border: '1px solid ' + C.border, borderRadius: '9px', padding: '10px 12px',
+				whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+				color: '#43536b', maxHeight: '110px', overflow: 'auto', lineHeight: '1.6'
+			}) + '">' + U.esc(EAI.diagnostics()) + '</div>' +
+			'</div>' +
+
+			/* ---------------- footer ---------------- */
+			'<div style="' + st({
+				padding: '12px 22px 16px', borderTop: '1px solid ' + C.border,
+				background: C.surface
+			}) + '">' +
+			'<div id="eai-msg" style="' + st({
+				fontSize: '12px', color: C.muted, minHeight: '17px', marginBottom: '10px'
+			}) + '"></div>' +
+			'<div style="' + st({ display: 'flex', gap: '9px', flexWrap: 'wrap' }) + '">' +
+			primaryBtn('保存', 'eai-save') +
+			'<button id="eai-test" class="eai-btn" style="' + ghostBtn() + '">测试连接</button>' +
+			'<button id="eai-copy-diag" class="eai-btn" style="' + ghostBtn() + '">复制诊断信息</button>' +
+			'</div></div>' +
+			'</div>';
+
+		var ctl = EAI.dlg({
+			title: 'AI 设置',
+			width: 620,
+			height: 720,
+			modal: true,
+			content: html
 		});
+		if (!ctl) return null;
+		UI.dlgSettingsCtl = ctl;
+		var $d = ctl.el;
+		UI.dlgSettings = $d;
+
+		function collect() {
+			return {
+				provider: $('#eai-provider', $d).val(),
+				baseUrl: ($('#eai-baseurl', $d).val() || '').trim(),
+				apiKey: ($('#eai-apikey', $d).val() || '').trim(),
+				model: ($('#eai-model', $d).val() || '').trim(),
+				temperature: Number($('#eai-temp', $d).val() || 0),
+				maxTokens: Number($('#eai-maxtok', $d).val() || 8192),
+				timeout: Number($('#eai-timeout', $d).val() || 300),
+				language: $('#eai-lang', $d).val(),
+				maxSteps: Number($('#eai-steps', $d).val() || 12),
+				extraHeaders: ($('#eai-headers', $d).val() || '').trim()
+			};
+		}
+
+		function noteFor(p) {
+			return p === 'anthropic'
+				? '请求头 x-api-key + anthropic-version；地址拼成 &lt;base&gt;/messages'
+				: '请求头 Authorization: Bearer；地址拼成 &lt;base&gt;/chat/completions';
+		}
+
+		function refreshEndpoint() {
+			try { $('#eai-endpoint', $d).text(EAI.llm.endpoint(collect())); }
+			catch (e) { $('#eai-endpoint', $d).text('-'); }
+		}
+
+		var $note = $('#eai-provider', $d).parent().find('#eai-provider-note');
+		$note.html(noteFor(cfg.provider));
+
+		$('#eai-provider', $d).on('change', function () {
+			$note.html(noteFor(this.value));
+			refreshEndpoint();
+		});
+		$('#eai-baseurl', $d).on('input', refreshEndpoint);
+
+		$('#eai-preset', $d).on('change', function () {
+			var id = this.value, p = null, i;
+			if (!id) return;
+			for (i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === id) { p = PROVIDERS[i]; break; }
+			if (!p) return;
+			$('#eai-provider', $d).val(p.protocol);
+			$note.html(noteFor(p.protocol));
+			$('#eai-baseurl', $d).val(p.base);
+			if (p.model) $('#eai-model', $d).val(p.model);
+			refreshEndpoint();
+			$('#eai-msg', $d).css('color', '#5a6b85').text('已填入预设，地址 / 模型 / Key 仍可修改。');
+		});
+
+		$('#eai-save', $d).on('click', function () {
+			var c = collect();
+			EAI.cfg.save(c);
+			EAI._cfg = c;
+			$('#eai-msg', $d).css('color', '#1d7a3e')
+				.text('已保存：' + c.provider + ' · ' + (c.model || '-') + ' · ' + EAI.llm.endpoint(c));
+			UI.refreshStatus();
+			UI.appendMsg('sys', '设置已保存。');
+		});
+
+		$('#eai-test', $d).on('click', function () {
+			var c = collect();
+			if (!c.apiKey || !c.baseUrl || !c.model) {
+				$('#eai-msg', $d).css('color', '#932626').text('请填写接口地址、API Key 与模型名。');
+				return;
+			}
+			$('#eai-msg', $d).css('color', '#5a6b85').text('正在测试 ' + EAI.llm.endpoint(c) + ' …');
+			$('#eai-test', $d).prop('disabled', true);
+			EAI.llm.test(c).then(function (r) {
+				$('#eai-msg', $d).css('color', '#1d7a3e').text('连接正常 — ' + r);
+			}).catch(function (e) {
+				$('#eai-msg', $d).css('color', '#932626').text('连接失败：' + e.message);
+			}).then(function () { $('#eai-test', $d).prop('disabled', false); });
+		});
+
+		$('#eai-copy-diag', $d).on('click', function () {
+			var txt = EAI.diagnostics() + '\n\n--- log ---\n' + EAI.logLines.slice(-40).join('\n');
+			try {
+				var ta = document.createElement('textarea');
+				ta.value = txt;
+				document.body.appendChild(ta);
+				ta.select();
+				document.execCommand('copy');
+				document.body.removeChild(ta);
+				$('#eai-msg', $d).css('color', '#1d7a3e').text('诊断信息已复制。');
+			} catch (e) {
+				$('#eai-msg', $d).css('color', '#932626').text('复制失败：' + e);
+			}
+		});
+
+		refreshEndpoint();
+		return $d;
 	};
 
-	UI.parseSymbol = function (answer) {
-		var text = String(answer || '');
-		var m = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-		var body = m ? m[1] : text;
-		var start = body.indexOf('{');
-		var end = body.lastIndexOf('}');
-		if (start < 0 || end <= start) return null;
-		try {
-			var obj = JSON.parse(body.slice(start, end + 1));
-			if (!obj || !obj.pins || !obj.pins.length) return null;
-			if (obj.x === undefined) obj.x = 400;
-			if (obj.y === undefined) obj.y = 300;
-			return obj;
-		} catch (e) { return null; }
+	/* ------------------------------------------------------------ about -- */
+
+	UI.openAbout = function () {
+		injectStyle();
+		if (UI.dlgAbout) {
+			try { UI.dlgAboutCtl.open(); } catch (e) { /* ignore */ }
+			return UI.dlgAbout;
+		}
+
+		function card(icon, title, desc) {
+			return '<div style="' + st({
+				flex: '1 1 200px', minWidth: '190px', border: '1px solid ' + C.border,
+				borderRadius: '12px', padding: '12px 14px', background: '#fbfcfe'
+			}) + '">' +
+				'<div style="' + st({
+					fontWeight: '600', color: C.primaryDark, fontSize: '13px', marginBottom: '4px'
+				}) + '">' + icon + ' ' + title + '</div>' +
+				'<div style="' + st({ fontSize: '12px', color: '#5f6f86', lineHeight: '1.6' }) + '">' +
+				desc + '</div></div>';
+		}
+
+		function h2(t) {
+			return '<div style="' + st({
+				display: 'flex', alignItems: 'center', gap: '8px',
+				fontSize: '14px', fontWeight: '600', color: C.primaryDark,
+				margin: '22px 0 10px'
+			}) + '"><span style="' + st({
+				width: '3px', height: '15px', background: C.primary,
+				borderRadius: '2px', display: 'inline-block'
+			}) + '"></span>' + t + '</div>';
+		}
+
+		function ul(items) {
+			return '<ul style="' + st({
+				margin: '0 0 0 18px', padding: '0', fontSize: '12.5px',
+				color: '#3d4d66', lineHeight: '1.8'
+			}) + '">' + items.map(function (t) {
+				return '<li style="margin:3px 0">' + t + '</li>';
+			}).join('') + '</ul>';
+		}
+
+		var html = styleBlock() + '<div class="eai-root" style="' + st({
+			fontFamily: FONT, fontSize: '13px', color: C.text, background: C.bg
+		}) + '">' +
+
+			'<div style="' + st({
+				background: 'linear-gradient(135deg,#0f1f3a 0%,#1e3a68 50%,#2f6fbf 100%)',
+				color: '#fff', padding: '26px 28px 24px', display: 'flex',
+				gap: '20px', alignItems: 'center'
+			}) + '">' +
+			'<div style="' + st({
+				width: '76px', height: '76px', borderRadius: '20px', background: '#0b1729',
+				display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
+				boxShadow: '0 8px 24px rgba(0,0,0,.35)'
+			}) + '">' + logoSvg(60) + '</div>' +
+			'<div>' +
+			'<div style="' + st({ fontSize: '23px', fontWeight: '600', letterSpacing: '.6px' }) + '">AI 助手</div>' +
+			'<div style="' + st({ fontSize: '12.5px', opacity: '.85', marginTop: '3px' }) +
+			'">EasyEDA 标准版 · 智能原理图与 PCB 设计助手</div>' +
+			'<div style="' + st({
+				display: 'inline-block', marginTop: '10px', fontSize: '11.5px',
+				background: 'rgba(255,255,255,.16)', padding: '4px 12px', borderRadius: '20px'
+			}) + '">v' + EAI.ver + ' · 扩展 ID：' + U.esc(EAI.discoverExtId()) + '</div>' +
+			'</div></div>' +
+
+			'<div style="' + st({ padding: '20px 28px 26px' }) + '">' +
+			h2('它能做什么') +
+			'<div style="' + st({ display: 'flex', flexWrap: 'wrap', gap: '10px' }) + '">' +
+			card('📐', '原理图审查', '读取整个工程的网表，检查悬空引脚、缺去耦、网络冲突、上下拉与复位电路。') +
+			card('🔧', 'PCB 审查', '解析板框、器件布局与网络，结合截图评审布线、回流路径与工艺。') +
+			card('📦', 'BOM 分析', '缺值 / 缺封装 / 重复物料检查，给出采购与贴片建议。') +
+			card('✨', '生成原理图', '按自然语言需求放置器件、连线和网络标签，直接落到画布。') +
+			card('🧩', '图片生成符号', '识别符号图片的引脚与形状，生成带引脚的原理图符号。') +
+			card('✏️', '批量修改', '按位号批量改值、改位号，报告中的位号可点击定位。') +
+			'</div>' +
+
+			h2('工作原理') +
+			ul([
+				'内置 <b>Agent 循环</b>：模型会调用扩展封装好的工具（读网表、BOM、截图、放置器件、改值等），而不是凭空回答。',
+				'自动识别当前文档类型（<b>原理图 / PCB / 符号库</b>），只暴露与之匹配的工具。',
+				'网表由扩展本地解析文档 JSON 得到，并用编辑器自身的 <code>getWireNetName</code> 校核网络名。',
+				'兼容 <b>OpenAI</b> 与 <b>Anthropic</b> 两种协议，接口地址可完全自定义（支持第三方网关与本地模型）。'
+			]) +
+
+			h2('快速上手') +
+			ul([
+				'打开原理图 → 工具栏「AI助手」→ 点 <b>原理图审查</b> → 发送。',
+				'首次使用请先在 <b>设置</b> 里填写接口地址、API Key 与模型名，可点「测试连接」验证。',
+				'输入框支持 <b>Ctrl + Enter</b> 发送。',
+				'报告页可导出 Markdown / HTML；日志页保留每次工具调用，便于排查。'
+			]) +
+
+			h2('隐私') +
+			ul([
+				'API Key 保存在扩展配置与本机，不会上传到任何第三方（除了你配置的模型接口）。',
+				'只有在执行审查 / 生成时，设计数据才会发送给你所选择的模型服务。'
+			]) +
+
+			'<div style="' + st({
+				fontSize: '11.5px', color: C.muted, borderTop: '1px solid #e9eef6',
+				marginTop: '20px', paddingTop: '14px', lineHeight: '1.7'
+			}) + '">' +
+			'<b style="color:#3d4d66">扩展 ID</b>：' + U.esc(EAI.discoverExtId()) +
+			' ｜ <b style="color:#3d4d66">文档</b>：' + U.esc(EAI.eda.docKindLabel()) +
+			' ｜ <b style="color:#3d4d66">构建</b>：EasyEDA Std 扩展 API' +
+			'<br/>本扩展基于嘉立创EDA（EasyEDA）标准版的扩展 API 开发，与专业版扩展不通用。' +
+			'</div></div></div>';
+
+		var ctl = EAI.dlg({
+			title: '关于 AI 助手',
+			width: 740,
+			height: 700,
+			modal: true,
+			content: html
+		});
+		if (!ctl) return null;
+		UI.dlgAboutCtl = ctl;
+		UI.dlgAbout = ctl.el;
+		return UI.dlgAbout;
 	};
 })();

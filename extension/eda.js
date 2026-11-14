@@ -590,6 +590,8 @@
 				}
 			}
 			if (!designator) designator = params.pre || '';
+			/* last resort: a TEXT child that looks like a reference (R1, C12, U3) */
+			if (!designator) designator = guessDesignatorFromTexts(fp);
 
 			out.push({
 				gId: gid,
@@ -608,6 +610,24 @@
 		});
 		return out;
 	};
+
+	/** Picks a text child that looks like a component reference. */
+	function guessDesignatorFromTexts(fp) {
+		var re = /^[A-Z]{1,3}\d+$/;
+		for (var key in fp) {
+			if (!Object.prototype.hasOwnProperty.call(fp, key)) continue;
+			if (key !== 'TEXT' && key !== 'SVGNODE') continue;
+			var sub = fp[key];
+			if (!sub || typeof sub !== 'object') continue;
+			for (var id in sub) {
+				if (!Object.prototype.hasOwnProperty.call(sub, id)) continue;
+				var t = sub[id];
+				var str = t && (t.string || t.text);
+				if (str && re.test(String(str).trim())) return String(str).trim();
+			}
+		}
+		return '';
+	}
 
 	/** Nets of a PCB document (from the PAD / VIA net fields). */
 	D.pcbNets = function (json) {
@@ -774,5 +794,110 @@
 			}
 		}
 		return false;
+	};
+
+	/* ------------------------------------------------------- document kind */
+
+	var DOC_TYPES = {
+		'1': 'sch', '13': 'sch',
+		'2': 'schlib', '6': 'schlib', '7': 'schlib',
+		'3': 'pcb', '14': 'pcb',
+		'4': 'pcblib',
+		'8': 'subckt',
+		'10': 'waveform',
+		'12': 'photoview'
+	};
+
+	var DOC_NAMES = {
+		SCH: '1', SCHLIB: '2', PCB: '3', PCBLIB: '4', PRJ: '5', SUBPART: '6',
+		SPICESYMBOL: '7', SUBCKT: '8', NETLIST: '9', WAVEFORM: '10',
+		SCHLIB3D: '11', PHOTOVIEW: '12', SCHMODULE: '13', PCBMODULE: '14',
+		VIEW3D: '15', PCBLIB3D: '16'
+	};
+
+	/**
+	 * Abstract kind of the active document: 'sch' | 'pcb' | 'schlib' |
+	 * 'pcblib' | 'subckt' | 'waveform' | 'photoview' | null.
+	 */
+	D.docKind = function () {
+		var raw = null;
+		try {
+			var j = EAI.api('getActiveJson');
+			if (j && j.head && j.head.docType) raw = j.head.docType;
+		} catch (e) { /* ignore */ }
+		if (raw === null || raw === undefined) {
+			try { raw = D.editorCall('getDocStatus'); } catch (e) { /* ignore */ }
+		}
+		if (raw === null || raw === undefined) return null;
+		var s = String(raw);
+		if (DOC_NAMES[s]) s = DOC_NAMES[s];
+		return DOC_TYPES[s] || null;
+	};
+
+	D.docKindLabel = function () {
+		var k = D.docKind();
+		return ({
+			sch: 'Schematic / 原理图',
+			pcb: 'PCB',
+			schlib: 'Symbol library / 符号库',
+			pcblib: 'Footprint library / 封装库',
+			subckt: 'SPICE subckt',
+			waveform: 'Waveform',
+			photoview: 'Photo view'
+		})[k] || 'Unknown';
+	};
+
+	/* ------------------------------------------------------------- PCB ---- */
+
+	/** Board geometry from the active PCB. */
+	D.pcbInfo = function () {
+		var json = D.activeJson();
+		if (!json) return null;
+		var bbox = null;
+		try { bbox = EAI.api('editorCall', { cmd: 'getBBox', args: [] }); } catch (e) { /* ignore */ }
+		if (!bbox && json.BBox) bbox = json.BBox;
+
+		var footprints = D.pcbComponents(json);
+		var nets = D.pcbNets(json);
+		var tracks = json.TRACK ? Object.keys(json.TRACK).length : 0;
+		var vias = json.VIA ? Object.keys(json.VIA).length : 0;
+		var pads = json.PAD ? Object.keys(json.PAD).length : 0;
+
+		return {
+			bbox: bbox,
+			widthMil: bbox && bbox.width,
+			heightMil: bbox && bbox.height,
+			widthMm: bbox && bbox.width ? +(bbox.width * 0.0254).toFixed(2) : null,
+			heightMm: bbox && bbox.height ? +(bbox.height * 0.0254).toFixed(2) : null,
+			footprints: footprints,
+			nets: nets,
+			trackCount: tracks,
+			viaCount: vias,
+			padCount: pads,
+			layerCount: json.layers ? json.layers.length : null
+		};
+	};
+
+	/* ------------------------------------------------------------ capture -- */
+
+	/**
+	 * Rasterises the active canvas.
+	 * @returns {Promise<{base64, mediaType, width, height}>}
+	 */
+	D.capture = function (maxPx) {
+		return new Promise(function (resolve, reject) {
+			var svg;
+			try { svg = D.svg(50); } catch (e) { reject(e); return; }
+			if (!svg) { reject(new Error('could not export the canvas')); return; }
+			D.svgToPng(svg, maxPx || 1800).then(function (img) {
+				resolve({
+					base64: img.base64,
+					mediaType: 'image/png',
+					width: img.width,
+					height: img.height,
+					dataUrl: img.dataUrl
+				});
+			}).catch(reject);
+		});
 	};
 })();
