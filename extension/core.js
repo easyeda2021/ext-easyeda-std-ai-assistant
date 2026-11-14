@@ -570,9 +570,17 @@
 			e.preventDefault();
 			e.stopPropagation();
 
+			/* a previous drag that never got its mouseup must not linger */
+			if (card[0].__eaiDragEnd) {
+				try { card[0].__eaiDragEnd(); } catch (err) { /* ignore */ }
+				card[0].__eaiDragEnd = null;
+			}
+
 			/* keep the mask exactly as it is — switching it to block made the
 			   card jump to the left for a frame on the very first drag */
 			var rect = card[0].getBoundingClientRect();
+			card[0].style.maxWidth = 'none';
+			card[0].style.maxHeight = 'none';
 			card.css({
 				position: 'fixed', margin: '0',
 				left: rect.left + 'px', top: rect.top + 'px',
@@ -608,6 +616,7 @@
 			function onUp() {
 				window.removeEventListener('mousemove', onMove, true);
 				window.removeEventListener('mouseup', onUp, true);
+				card[0].__eaiDragEnd = null;
 				if (mode !== 'move') {
 					try {
 						if (opts.onResize) opts.onResize(card[0].offsetWidth, card[0].offsetHeight);
@@ -617,6 +626,7 @@
 
 			window.addEventListener('mousemove', onMove, true);
 			window.addEventListener('mouseup', onUp, true);
+			card[0].__eaiDragEnd = onUp;
 		}
 
 		head.on('mousedown', function (e) {

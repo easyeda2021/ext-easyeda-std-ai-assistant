@@ -341,6 +341,13 @@
 					.on('mousemove.eairesize', function (ev) {
 						if (!dragging) return;
 						var h = Math.min(320, Math.max(84, startH - (ev.clientY - startY)));
+
+						/* never grow past the space the chat can give up, otherwise
+						   the composer would be pushed out of the card */
+						var chat = $('#eai-chat', UI.dlgPanel)[0];
+						var room = (chat ? chat.offsetHeight : 0) + startH - 60;
+						h = Math.max(84, Math.min(h, room));
+
 						UI._composeH = h;
 						UI._composeFloor = h;
 						box.css('height', h + 'px');
