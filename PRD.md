@@ -70,8 +70,9 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 | 生成参数 | Temperature / Max tokens / 超时 / 最大工具步数 / 回答语言 / 额外请求头 |
 | 诊断 | 诊断信息 + 复制 |
 
-- 「添加供应商」下拉：自定义或内置预设（OpenAI / Claude / DeepSeek / 通义千问 /
-  智谱 / Kimi / SiliconFlow / OpenRouter / Ollama / Azure）
+- 「添加供应商」下拉：首项为「添加自定义供应商」（在表单里填写名称后创建），
+  其余为内置预设（OpenAI / Claude / DeepSeek / 通义千问 / 智谱 / Kimi / SiliconFlow /
+  OpenRouter / Ollama / Azure），选中即按预设创建
 - 模型组支持「+ 新增模型」与「获取模型列表」（`GET <base>/models`），
   拉取结果以勾选清单呈现，**已有模型自动置灰**，只添加所选
 - **重复检测**：供应商名称、同一供应商下的模型名（不区分大小写）实时标红；

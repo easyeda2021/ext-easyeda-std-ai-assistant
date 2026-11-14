@@ -19,6 +19,8 @@
 	var tab = 'providers';
 	var fetched = {};          /* providerId -> { names:[…], error:'', loading:bool } */
 	var confirmClear = false;
+	var addingCustom = false;   /* inline "new provider" form */
+	var customName = '';
 	var message = '';
 	var messageErr = false;
 
@@ -230,9 +232,10 @@
 	/* ------------------------------------------------------------- panes -- */
 
 	function paneProviders() {
-		var addOptions = '<option value="">+ 添加供应商（自定义）</option>';
+		var addOptions = '<option value="" selected>添加供应商</option>' +
+			'<option value="custom">添加自定义供应商</option>';
 		PRESETS.forEach(function (pr, i) {
-			addOptions += '<option value="' + i + '">+ ' + U.esc(pr.label) + '</option>';
+			addOptions += '<option value="' + i + '">' + U.esc(pr.label) + '</option>';
 		});
 
 		var cards = (draft.providers || []).map(providerCard).join('');
@@ -241,11 +244,32 @@
 				padding: '18px 12px', textAlign: 'center', fontSize: '12px',
 				color: C.muted, border: '1px dashed ' + C.borderStrong,
 				borderRadius: '9px', marginBottom: '10px', lineHeight: '1.8'
-			}) + '">还没有供应商<br/>在下面选择预设或「自定义」来添加一个</div>';
+			}) + '">还没有供应商<br/>在下面「添加供应商」里选一个预设，或「添加自定义供应商」</div>';
+		}
+
+		var customForm = '';
+		if (addingCustom) {
+			customForm =
+				'<div style="' + st({
+					border: '1px solid ' + C.border, borderRadius: '9px', padding: '10px',
+					marginBottom: '9px', background: '#fbfcfe'
+				}) + '">' +
+				'<div style="' + st({ fontSize: '12px', color: '#3a4a63', marginBottom: '6px' }) +
+				'">新供应商名称</div>' +
+				'<div style="' + st({ display: 'flex', gap: '6px', alignItems: 'center' }) + '">' +
+				'<input id="eai-custom-name" value="' + U.esc(customName) +
+				'" placeholder="例如 My Gateway" style="' + st({
+					flex: '1 1 auto', minWidth: '0', height: '30px', padding: '0 9px',
+					border: '1px solid #d8e0ec', borderRadius: '7px', fontSize: '12px',
+					fontFamily: FONT, color: C.text, outline: 'none'
+				}) + '">' +
+				smallBtn('', '添加', { 'custom-add': '1' }) +
+				smallBtn('', '取消', { 'custom-cancel': '1' }) +
+				'</div></div>';
 		}
 
 		return '' +
-			cards +
+			cards + customForm +
 			'<div style="' + st({ marginTop: '4px' }) + '">' +
 			'<select id="eai-add-provider" style="' + st({
 				width: '100%', height: '32px', padding: '0 9px', borderRadius: '8px',
@@ -343,8 +367,8 @@
 		return null;
 	}
 
-	function addProvider(preset) {
-		var name = preset ? preset.label : '新供应商';
+	function addProvider(preset, wantedName) {
+		var name = wantedName || (preset ? preset.label : '新供应商');
 		var base = name, n = 2;
 		while (EAI.cfg.nameTaken(draft, base)) { base = name + ' ' + n; n++; }
 
@@ -355,7 +379,7 @@
 			baseUrl: preset ? preset.base : '',
 			apiKey: '',
 			collapsed: false,
-			models: [{ id: EAI.cfgId('m'), name: preset ? preset.model : '' }]
+			models: preset ? [{ id: EAI.cfgId('m'), name: preset.model }] : []
 		};
 		draft.providers.push(p);
 		if (!draft.active || !findProvider(draft.active.providerId)) {
@@ -417,6 +441,8 @@
 		tab = 'providers';
 		fetched = {};
 		confirmClear = false;
+		addingCustom = false;
+		customName = '';
 		message = '';
 		messageErr = false;
 
@@ -541,9 +567,39 @@
 
 		$d.on('change', '#eai-add-provider', function () {
 			var v = $(this).val();
-			if (v === '') addProvider(null);
-			else addProvider(PRESETS[Number(v)]);
 			$(this).val('');
+			if (v === '') return;
+
+			if (v === 'custom') {
+				addingCustom = true;
+				customName = '';
+				render();
+				try { $('#eai-custom-name', $d).focus(); } catch (e) { /* ignore */ }
+				return;
+			}
+			addProvider(PRESETS[Number(v)]);
+		});
+
+		$d.on('input', '#eai-custom-name', function () {
+			customName = $(this).val();
+		});
+
+		$d.on('click', '[data-custom-add]', function (e) {
+			e.preventDefault();
+			var name = String(customName || '').trim();
+			if (!name) { say('请输入供应商名称', true); return; }
+			if (EAI.cfg.nameTaken(draft, name)) { say('供应商名称重复：' + name, true); return; }
+			addProvider(null, name);
+			addingCustom = false;
+			customName = '';
+			render();
+		});
+
+		$d.on('click', '[data-custom-cancel]', function (e) {
+			e.preventDefault();
+			addingCustom = false;
+			customName = '';
+			render();
 		});
 
 		/* ---- fetch model list ---- */
