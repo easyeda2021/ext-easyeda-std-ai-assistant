@@ -98,6 +98,29 @@
 		}) + '">' + text + '</button>';
 	}
 
+	function actionsHtml() {
+		return '<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除配置</button>' +
+			'<span style="flex:1"></span>' +
+			'<button id="eai-cancel" class="eai-btn" style="' + ghostBtn() + '">取消</button>' +
+			'<button id="eai-save" class="eai-btn" style="' + st({
+				background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
+				borderRadius: '9px', padding: '8px 22px', fontSize: '12.5px',
+				fontWeight: '600', fontFamily: FONT
+			}) + '">保存</button>';
+	}
+
+	function confirmHtml() {
+		return '<span style="' + st({
+			fontSize: '12px', color: '#932626', alignSelf: 'center'
+		}) + '">确定清除已保存的接口配置？</span>' +
+			'<span style="flex:1"></span>' +
+			'<button id="eai-clear-no" class="eai-btn" style="' + ghostBtn() + '">取消</button>' +
+			'<button id="eai-clear-yes" class="eai-btn" style="' + st({
+				background: '#fff', border: '1px solid #e3a9a9', color: '#a83232',
+				borderRadius: '9px', padding: '7px 16px', fontSize: '12.5px', fontFamily: FONT
+			}) + '">确认清除</button>';
+	}
+
 	/* -------------------------------------------------------- provider UI -- */
 
 	function providerCard(p, index) {
@@ -473,14 +496,7 @@
 				fontSize: '12px', color: C.muted, minHeight: '17px', marginBottom: '8px'
 			}) + '"></div>' +
 			'<div id="eai-set-actions" style="' + st({ display: 'flex', gap: '8px' }) + '">' +
-			'<button id="eai-save" class="eai-btn" style="' + st({
-				background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
-				borderRadius: '9px', padding: '8px 22px', fontSize: '12.5px',
-				fontWeight: '600', fontFamily: FONT
-			}) + '">保存</button>' +
-			'<button id="eai-cancel" class="eai-btn" style="' + ghostBtn() + '">取消</button>' +
-			'<span style="flex:1"></span>' +
-			'<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除配置</button>' +
+			actionsHtml() +
 			'</div></div>' +
 			'</div>';
 
@@ -705,14 +721,7 @@
 		$d.on('click', '#eai-clear-config', function () {
 			if (confirmClear) return;
 			confirmClear = true;
-			$('#eai-set-actions', $d).html(
-				'<span style="' + st({ fontSize: '12px', color: '#932626', alignSelf: 'center' }) +
-				'">确定清除已保存的接口配置？</span>' +
-				'<button id="eai-clear-yes" class="eai-btn" style="' + st({
-					background: '#fff', border: '1px solid #e3a9a9', color: '#a83232',
-					borderRadius: '9px', padding: '7px 16px', fontSize: '12.5px', fontFamily: FONT
-				}) + '">确认清除</button>' +
-				'<button id="eai-clear-no" class="eai-btn" style="' + ghostBtn() + '">取消</button>');
+			$('#eai-set-actions', $d).html(confirmHtml());
 		});
 
 		$d.on('click', '#eai-clear-yes', function () {
@@ -724,28 +733,12 @@
 			UI.renderModelPicker && UI.renderModelPicker();
 			say('已清除已保存的配置');
 			/* restore footer buttons */
-			$('#eai-set-actions', $d).html(
-				'<button id="eai-save" class="eai-btn" style="' + st({
-					background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
-					borderRadius: '9px', padding: '8px 22px', fontSize: '12.5px',
-					fontWeight: '600', fontFamily: FONT
-				}) + '">保存</button>' +
-				'<button id="eai-cancel" class="eai-btn" style="' + ghostBtn() + '">取消</button>' +
-				'<span style="flex:1"></span>' +
-				'<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除配置</button>');
+			$('#eai-set-actions', $d).html(actionsHtml());
 		});
 
 		$d.on('click', '#eai-clear-no', function () {
 			confirmClear = false;
-			$('#eai-set-actions', $d).html(
-				'<button id="eai-save" class="eai-btn" style="' + st({
-					background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
-					borderRadius: '9px', padding: '8px 22px', fontSize: '12.5px',
-					fontWeight: '600', fontFamily: FONT
-				}) + '">保存</button>' +
-				'<button id="eai-cancel" class="eai-btn" style="' + ghostBtn() + '">取消</button>' +
-				'<span style="flex:1"></span>' +
-				'<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除配置</button>');
+			$('#eai-set-actions', $d).html(actionsHtml());
 			say('');
 		});
 
