@@ -89,5 +89,6 @@
 
 	EAI.log('AI 助手 ready.');
 	/* drop the full diagnostics into the log so a failing install is obvious */
-	EAI.log('\n' + EAI.diagnostics());
+	EAI.log('— diagnostics —');
+	EAI.diagnostics().split(String.fromCharCode(10)).forEach(function (l) { EAI.log(l); });
 })();

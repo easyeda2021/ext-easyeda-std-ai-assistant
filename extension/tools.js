@@ -67,7 +67,8 @@
 					kind: kind,
 					kindLabel: D.docKindLabel(),
 					title: D.activeTitle(),
-					editable: kind === 'sch' || kind === 'pcb'
+					editable: kind === 'sch' || kind === 'pcb' ||
+						kind === 'schlib' || kind === 'pcblib'
 				};
 				if (kind === 'sch') {
 					var comps = D.components(json);
@@ -130,15 +131,13 @@
 		{
 			name: 'get_netlist',
 			description:
-				'Return a CONDENSED net list of the whole schematic project, grouped by ' +
-				'importance: floating (single pin) nets, naming conflicts, unnamed nets, ' +
-				'power / ground rails, then signal nets. Large nets are abbreviated to ' +
-				'a pin count plus the first few members, so the answer stays small. ' +
-				'Pass {net:"NETNAME"} to get every pin of one net.',
+				'Return the COMPLETE net list of the whole schematic project in one call: ' +
+				'every component with its designator, name, package, and for each pin its ' +
+				'pin name/number and the net it is connected to. Also flags floating ' +
+				'(single-pin) nets, name conflicts and power/ground rails. Use this single ' +
+				'result to review the design as a whole — do NOT query net by net.',
 			parameters: P.obj({
-				net: P.str('Optional: return the full pin list of this net only.'),
-				maxPins: P.num('Max members shown per net (default 6, max 40).'),
-				maxNets: P.num('Max nets listed (default 120).')
+				maxComponents: P.num('Max components listed (default 150, max 400).')
 			}),
 			run: function (args) {
 				args = args || {};
@@ -147,97 +146,95 @@
 
 				var sheets = D.projectSchematics();
 				if (!sheets.length) return 'No schematic sheet found in the project.';
+
 				var nl = D.netlist(sheets);
 
-				function pinName(p) { return p.designator + '.' + p.number; }
-
-				function members(n, max) {
-					var arr = n.pins.map(pinName);
-					if (!arr.length) return '(no pins)';
-					if (arr.length <= max) return arr.join(', ');
-					return arr.slice(0, max).join(', ') + ' …+ ' + (arr.length - max);
-				}
-
-				/* ---- one net in full ------------------------------------- */
-				if (args.net) {
-					var want = String(args.net).toUpperCase();
-					var hit = null;
-					for (var i = 0; i < nl.nets.length; i++) {
-						if (String(nl.nets[i].name).toUpperCase() === want) { hit = nl.nets[i]; break; }
-					}
-					if (!hit) return 'Net "' + args.net + '" not found.';
-					var out = ['Net ' + hit.name + '  {' + hit.pins.length + ' pins}' +
-						(hit.conflict ? '  [NAME CONFLICT]' : '') +
-						(hit.auto ? '  [unnamed]' : '')];
-					hit.labels.forEach(function (l) {
-						out.push('  label ' + l.name + ' (' + l.kind + ', ' + l.sheet + ')');
-					});
-					out.push('  pins: ' + hit.pins.map(function (p) {
-						return p.designator + '.' + p.number + (p.name ? '(' + p.name + ')' : '');
-					}).join(', '));
-					return out.join('\n');
-				}
-
-				var maxPins = Math.min(Number(args.maxPins) || 6, 40);
-				var maxNets = Math.min(Number(args.maxNets) || 120, 400);
-				var POWER = /^(GND|AGND|DGND|PGND|VCC|VDD|VSS|VEE|VBAT|VIN|VBUS|[+\-]?\d+V\d*|\d+V\d*|[+\-]?\d+V\d+)$/i;
-
-				var buckets = { float: [], conflict: [], unnamed: [], power: [], signal: [] };
+				/* ---- pin -> net lookup ---------------------------------- */
+				var pinNet = {};
 				nl.nets.forEach(function (n) {
-					if (n.conflict) buckets.conflict.push(n);
-					else if (n.pins.length === 1) buckets.float.push(n);
-					else if (n.auto) buckets.unnamed.push(n);
-					else if (POWER.test(String(n.name).replace(/\s/g, ''))) buckets.power.push(n);
-					else buckets.signal.push(n);
+					n.pins.forEach(function (p) {
+						var k = p.designator + '|' + p.number;
+						pinNet[k] = pinNet[k] ? (pinNet[k] + ' / ' + n.name) : n.name;
+					});
 				});
 
+				/* ---- every component of every sheet ---------------------- */
+				var comps = [];
+				sheets.forEach(function (sh) {
+					D.components(sh.json).forEach(function (c) { comps.push(c); });
+				});
+				comps.sort(function (a, b) {
+					return String(a.designator).localeCompare(String(b.designator), 'en', { numeric: true });
+				});
+
+				var maxComp = Math.min(Number(args.maxComponents) || 150, 400);
 				var lines = [];
+
+				/* ---- summary --------------------------------------------- */
+				var floatNets = nl.nets.filter(function (n) { return n.pins.length === 1; });
+				var conflictNets = nl.nets.filter(function (n) { return n.conflict; });
+				var unnamed = nl.nets.filter(function (n) { return n.auto; });
+
 				lines.push('## 概要');
-				lines.push('图纸 ' + nl.stats.sheets + ' · 网络 ' + nl.stats.nets +
-					'（有名字 ' + nl.stats.namedNets + '，未命名 ' +
-					(nl.stats.nets - nl.stats.namedNets) + '，命名冲突 ' + nl.stats.conflicts +
-					'）· 引脚 ' + nl.stats.pins + ' · 导线 ' + nl.stats.wires);
-				lines.push('单引脚网络 ' + buckets.float.length +
-					' · 电源/地 ' + buckets.power.length +
-					' · 信号 ' + buckets.signal.length);
+				lines.push('图纸 ' + nl.stats.sheets + ' · 元件 ' + comps.length +
+					' · 网络 ' + nl.stats.nets +
+					'（命名 ' + (nl.stats.nets - unnamed.length) +
+					'，未命名 ' + unnamed.length +
+					'，冲突 ' + conflictNets.length + '）· 引脚 ' + nl.stats.pins);
+				if (conflictNets.length) {
+					lines.push('命名冲突：' + conflictNets.slice(0, 20).map(function (n) {
+						return n.name + '[' + n.labels.map(function (l) { return l.name; }).join('/') + ']';
+					}).join(', '));
+				}
+				if (floatNets.length) {
+					lines.push('单引脚网络 ' + floatNets.length + ' 个（可能悬空）：' +
+						floatNets.slice(0, 40).map(function (n) {
+							var p = n.pins[0];
+							return n.name + '(' + p.designator + '.' + p.number + ')';
+						}).join(', ') + (floatNets.length > 40 ? ' …' : ''));
+				}
 				lines.push('');
 
-				var shown = 0;
-				function section(title, arr, opts) {
-					if (!arr.length) return;
-					lines.push('## ' + title + '（' + arr.length + '）');
-					var budget = (opts && opts.max) || maxNets;
-					arr.slice(0, budget).forEach(function (n) {
-						var line = '- ' + n.name +
-							(n.auto ? ' (未命名)' : '') +
-							(n.conflict ? ' [冲突: ' +
-								n.labels.map(function (l) { return l.name; }).join(' / ') + ']' : '') +
-							' {' + n.pins.length + '} ' +
-							members(n, (opts && opts.pins) || maxPins);
-						lines.push(line);
-						shown++;
+				/* ---- component / pin / net table ------------------------- */
+				lines.push('## 元件引脚网络（位号 | 名称 | 封装 | 引脚=网络）');
+				if (!comps.length) {
+					lines.push('（没有元件）');
+				}
+				comps.slice(0, maxComp).forEach(function (c) {
+					var pins = (c.pins || []).map(function (p) {
+						var net = pinNet[c.designator + '|' + p.number] || 'NC';
+						var label = p.name ? (p.name + '(' + p.number + ')') : String(p.number);
+						return label + '=' + net;
 					});
-					if (arr.length > budget) {
-						lines.push('- …还有 ' + (arr.length - budget) + ' 个同类网络');
-					}
-					lines.push('');
+					lines.push('- ' + (c.designator || '?') +
+						' | ' + (c.name || '') +
+						' | ' + (c.package || '') +
+						' | ' + (pins.join(', ') || '无引脚'));
+				});
+				if (comps.length > maxComp) {
+					lines.push('- …还有 ' + (comps.length - maxComp) + ' 个元件未列出');
+				}
+				lines.push('');
+
+				/* ---- power / ground rails -------------------------------- */
+				var POWER = /^(GND|AGND|DGND|PGND|VCC|VDD|VSS|VEE|VBAT|VIN|VBUS|[+\-]?\d+V\d*)$/i;
+				var rails = nl.nets.filter(function (n) {
+					return POWER.test(String(n.name).replace(/\s/g, ''));
+				});
+				if (rails.length) {
+					lines.push('## 电源与地');
+					rails.forEach(function (n) {
+						var members = n.pins.map(function (p) { return p.designator + '.' + p.number; });
+						var shown = members.slice(0, 10).join(', ');
+						if (members.length > 10) shown += ' …+ ' + (members.length - 10);
+						lines.push('- ' + n.name + ' {' + members.length + '} ' + shown);
+					});
 				}
 
-				/* the small, actionable buckets are always listed in full */
-				section('需要关注：命名冲突', buckets.conflict, { pins: 20, max: 40 });
-				section('需要关注：单引脚网络（可能悬空）', buckets.float, { pins: 4, max: 60 });
-				section('未命名网络（建议加网络标签）', buckets.unnamed, { pins: 4, max: 40 });
-				section('电源与地', buckets.power, { pins: 6, max: 40 });
-				section('信号网络', buckets.signal, { pins: 6, max: 80 });
-
-				if (!shown) lines.push('（没有可列出的网络）');
-				lines.push('');
-				lines.push('提示：需要某个网络的完整引脚，调用 get_netlist({"net":"网络名"})。');
-
 				var text = lines.join('\n');
-				if (text.length > 14000) {
-					text = text.slice(0, 14000) +
-						'\n…（网表过长已截断，可用 net 参数查询单个网络）';
+				if (text.length > 24000) {
+					text = text.slice(0, 24000) +
+						'\n…（网表过长已截断；可调大 maxComponents，或缩小到单个图纸再评审）';
 				}
 				return text;
 			}
@@ -516,7 +513,10 @@
 	T.run = function (name, args) {
 		var t = T.byName[name];
 		if (!t) return Promise.resolve('Unknown tool: ' + name);
-		EAI.log('tool call: ' + name + ' ' + EAI.util.fmt(args || {}, 400));
+		var argTxt = '';
+		try { argTxt = JSON.stringify(args || {}); } catch (e) { argTxt = '{}'; }
+		if (argTxt.length > 400) argTxt = argTxt.slice(0, 400) + '…';
+		EAI.log('tool call: ' + name + ' ' + argTxt);
 		return Promise.resolve()
 			.then(function () { return t.run(args || {}); })
 			.then(function (r) {

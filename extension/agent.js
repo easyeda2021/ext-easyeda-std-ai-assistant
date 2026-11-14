@@ -50,14 +50,31 @@
 		var toolsDisabled = false;
 		var nudged = false;      /* asked once for a final answer without tools */
 		var usedTools = false;
+		var toolCallsTotal = 0;  /* guards against one-call-per-net exploration */
+		var toolsNudged = false;
 
 		function step() {
 			if (AG.abort) return Promise.resolve({ text: '', steps: steps, aborted: true, messages: messages });
 			if (steps >= maxSteps) {
-				return Promise.resolve({
-					text: 'Reached the step limit (' + maxSteps + ').',
-					steps: steps, messages: messages
-				});
+				/*
+				 * Never end with an empty answer: run one last pass without
+				 * tools so the model has to write the conclusion.
+				 */
+				if (!toolsDisabled) {
+					toolsDisabled = true;
+					messages.push({
+						role: 'user',
+						content: [{
+							type: 'text',
+							text: '已经达到工具步数上限。请不要再调用工具，直接基于上面已有的信息给出完整的最终报告。'
+						}]
+					});
+					emit(onEvent, { type: 'note', text: '达到步数上限，改为强制输出结论' });
+				} else {
+					return Promise.resolve({
+						text: '', steps: steps, limitReached: true, messages: messages
+					});
+				}
 			}
 			steps++;
 
@@ -127,6 +144,24 @@
 				});
 
 				return chain.then(function () {
+					toolCallsTotal += res.toolCalls.length;
+					/*
+					 * Models love to drill into one net after another.  After a
+					 * dozen tool calls stop the exploration and force a report.
+					 */
+					if (toolCallsTotal >= 12 && !toolsDisabled && !toolsNudged) {
+						toolsNudged = true;
+						toolsDisabled = true;
+						messages.push({
+							role: 'user',
+							content: [{
+								type: 'text',
+								text: '你已收集到足够的信息，请不要再调用工具，直接基于上面的结果给出完整的最终报告。'
+							}]
+						});
+						emit(onEvent, { type: 'note', text: '工具调用较多，改为强制输出结论' });
+					}
+
 					/* a tool may have produced a picture — attach it for the next turn */
 					if (EAI._pendingImage) {
 						var img = EAI._pendingImage;

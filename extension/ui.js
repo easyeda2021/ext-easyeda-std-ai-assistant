@@ -24,7 +24,7 @@
 
 	var history = [];
 	var lastReport = '';
-	var pendingImage = null;
+	var pendingImages = [];      /* {dataUrl, base64, mediaType, name} */
 	var busy = false;
 
 	/* ------------------------------------------------------------ design -- */
@@ -51,13 +51,17 @@
 		for (var k in o) {
 			if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
 			var name = k.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
-			out.push(name + ':' + o[k]);
+			/* a raw " would terminate the enclosing style="..." attribute */
+			out.push(name + ':' + String(o[k]).replace(/"/g, '&quot;'));
 		}
 		return out.join(';');
 	}
 
-	var FONT = '"Microsoft YaHei","Segoe UI",Verdana,sans-serif';
-	var MONO = 'Consolas,Monaco,"Courier New",monospace';
+	/* NOTE: these values land inside style="..." attributes, so they must not
+	   contain double quotes — otherwise the attribute is truncated and every
+	   property after font-family silently disappears. */
+	var FONT = "'Microsoft YaHei','Segoe UI',Verdana,sans-serif";
+	var MONO = "Consolas,Monaco,'Courier New',monospace";
 
 	/* hover / animation only — never layout */
 	var EXTRA_CSS = [
@@ -260,122 +264,54 @@
 
 	/* ------------------------------------------------------------ pieces -- */
 
-	function iconBtn(id, title, glyph) {
-		return '<a href="#" id="' + id + '" title="' + title + '" style="' +
-			st({
-				color: '#fff', textDecoration: 'none', fontSize: '15px', lineHeight: '1',
-				padding: '6px 8px', borderRadius: '8px', background: 'rgba(255,255,255,.12)',
-				display: 'inline-block'
-			}) + '">' + glyph + '</a>';
+	/* ------------------------------------------------------ line icons -- */
+
+	function svgIcon(paths, size, color) {
+		return '<svg width="' + (size || 16) + '" height="' + (size || 16) + '" ' +
+			'viewBox="0 0 24 24" fill="none" stroke="' + (color || 'currentColor') + '" ' +
+			'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ' +
+			'style="display:block;pointer-events:none">' + paths + '</svg>';
 	}
 
-	function headerHtml() {
-		return '<div style="' + st({
-			display: 'flex', alignItems: 'center', gap: '12px',
-			padding: '14px 16px',
-			background: 'linear-gradient(135deg,#16294a 0%,#1e3a68 55%,#2e5896 100%)',
-			color: '#fff', borderTopLeftRadius: '6px', borderTopRightRadius: '6px'
-		}) + '">' +
-			'<div style="' + st({
-				width: '38px', height: '38px', borderRadius: '11px',
-				background: '#0b1a30', display: 'flex',
-				alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
-				boxShadow: '0 4px 14px rgba(0,0,0,.35)'
-			}) + '">' + logoSvg(27) + '</div>' +
-			'<div style="' + st({ flex: '1 1 auto', minWidth: '0' }) + '">' +
-			'  <div style="' + st({ fontSize: '13.5px', fontWeight: '600', letterSpacing: '.3px' }) +
-			'">EasyEDA 智能设计助手</div>' +
-			'  <div id="eai-sub" style="' + st({ fontSize: '11.5px', opacity: '.75', marginTop: '3px' }) +
-			'">正在读取文档…</div>' +
-			'</div>' +
-			'<span id="eai-state" style="' + st({
-				fontSize: '11px', background: 'rgba(255,255,255,.16)', padding: '4px 11px',
-				borderRadius: '20px', whiteSpace: 'nowrap'
-			}) + '">未配置</span>' +
-			iconBtn('eai-btn-clear', '清空会话', '&#128465;') +
-			iconBtn('eai-btn-settings', '设置', '&#9881;') +
-			iconBtn('eai-btn-image', '附加图片', '&#128247;') +
-			'<input type="file" id="eai-file" accept="image/*" style="display:none">' +
-			'</div>';
-	}
+	var ICONS = {
+		trash: '<path d="M3 6h18"/><path d="M8 6V4.5a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 16 4.5V6"/>' +
+			'<path d="M18.5 6l-.9 13.2a1.8 1.8 0 0 1-1.8 1.8H8.2a1.8 1.8 0 0 1-1.8-1.8L5.5 6"/>' +
+			'<path d="M10 11v5"/><path d="M14 11v5"/>',
+		settings: '<circle cx="12" cy="12" r="3"/>' +
+			'<path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06' +
+			'a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.1' +
+			'a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06' +
+			'A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.1' +
+			'A1.7 1.7 0 0 0 4.6 8.86a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06' +
+			'A1.7 1.7 0 0 0 8.96 4.5a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.1' +
+			'a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06' +
+			'a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.1' +
+			'a1.7 1.7 0 0 0-1.5 1z"/>',
+		image: '<rect x="3" y="3.5" width="18" height="17" rx="2.5"/>' +
+			'<circle cx="8.6" cy="8.8" r="1.5"/><path d="M21 15.2l-4.3-4.3L5.6 21"/>',
+		send: '<path d="M12 19.5V5.2"/><path d="M6.4 10.8L12 5.2l5.6 5.6"/>',
+		stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.4"/>',
+		copy: '<rect x="9" y="9" width="11" height="11" rx="2.4"/>' +
+			'<path d="M5.4 15.2V6a1.6 1.6 0 0 1 1.6-1.6h8.4"/>'
+	};
 
-	function panelHtml() {
-		return styleBlock() + '<div class="eai-root" style="' + st({
-			fontFamily: FONT, fontSize: '13px', color: C.text, lineHeight: '1.6',
-			background: C.bg, margin: '0', padding: '0'
-		}) + '">' +
-			headerHtml() +
-
-			'<div style="' + st({
-				display: 'flex', gap: '6px', padding: '10px 16px',
-				background: C.bg, borderBottom: '1px solid ' + C.border
-			}) + '">' +
-			'  <a href="#" class="eai-tab eai-active" data-tab="chat" style="' + segCss(true) + '">对话</a>' +
-			'  <a href="#" class="eai-tab" data-tab="log" style="' + segCss(false) + '">日志</a>' +
-			'</div>' +
-
-			'<div class="eai-pane" data-pane="chat" style="display:block">' +
-			'  <div id="eai-pills" style="' + st({
-				display: 'flex', flexWrap: 'wrap', gap: '8px',
-				padding: '11px 16px', background: C.surface,
-				borderBottom: '1px solid ' + C.border
-			}) + '"></div>' +
-			'  <div id="eai-chat" class="eai-chat" style="' + st({
-				height: '330px', overflowY: 'auto', padding: '14px 16px',
-				background: '#f8fafd'
-			}) + '"></div>' +
-			composeHtml() +
-			'</div>' +
-
-			'<div class="eai-pane" data-pane="log" style="display:none">' +
-			'  <div id="eai-log" class="eai-log" style="' + st({
-				height: '418px', overflowY: 'auto', background: '#101926', color: '#c3d3e6',
-				padding: '12px 14px', fontFamily: MONO, fontSize: '11.5px',
-				whiteSpace: 'pre-wrap', lineHeight: '1.55'
-			}) + '"></div>' +
-			'</div>' +
-			'</div>';
-	}
-
-	function composeHtml() {
-		return '  <div style="' + st({
-			padding: '12px 16px 14px', borderTop: '1px solid ' + C.border, background: C.bg
-		}) + '">' +
-			'    <textarea id="eai-input" class="eai-in" style="' + st({
-				width: '100%', height: '76px', resize: 'vertical', boxSizing: 'border-box',
-				border: '1px solid ' + C.borderStrong, borderRadius: '10px',
-				padding: '10px 12px', fontSize: '13px', fontFamily: FONT,
-				color: C.text, outline: 'none'
-			}) + '" placeholder="描述你的需求，或点击上面的胶囊按钮填入提示词…"></textarea>' +
-			'    <div style="' + st({
-				display: 'flex', alignItems: 'center', gap: '8px', marginTop: '9px'
-			}) + '">' +
-			'      <span id="eai-imgbadge" style="' + st({
-				display: 'none', fontSize: '11px', background: '#e8eefb', color: '#2f5fa8',
-				borderRadius: '12px', padding: '3px 10px'
-			}) + '">已附加图片</span>' +
-			'      <span style="' + st({ fontSize: '11px', color: C.muted }) + '">Ctrl + Enter 发送</span>' +
-			'      <span style="flex:1"></span>' +
-			'      <button id="eai-stop" class="eai-btn" style="' + st({
-				display: 'none', background: '#fff', border: '1px solid #e3a9a9', color: '#a83232',
-				borderRadius: '9px', padding: '8px 16px', fontSize: '12.5px', fontFamily: FONT
-			}) + '">停止</button>' +
-			'      <button id="eai-send" class="eai-btn" style="' + st({
-				background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
-				borderRadius: '9px', padding: '8px 22px', fontSize: '12.5px', fontWeight: '600',
-				fontFamily: FONT, boxShadow: '0 2px 8px rgba(47,111,191,.28)'
-			}) + '">发送</button>' +
-			'    </div>' +
-			'  </div>';
+	function iconBtn(id, title, paths) {
+		return '<a href="#" id="' + id + '" title="' + title + '" style="' + st({
+			color: '#ffffff', textDecoration: 'none', padding: '7px',
+			borderRadius: '9px', background: 'rgba(255,255,255,.12)',
+			display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+			flex: '0 0 auto', lineHeight: '0'
+		}) + '">' + svgIcon(paths, 16) + '</a>';
 	}
 
 	function segCss(active) {
 		return st({
-			padding: '6px 18px', borderRadius: '999px',
-			background: active ? C.primary : '#eef3fa',
-			color: active ? '#ffffff' : '#4a5f7d',
+			padding: '5px 13px', borderRadius: '999px',
+			background: active ? '#ffffff' : 'rgba(255,255,255,.12)',
+			color: active ? C.primaryDark : '#e6eefc',
 			fontWeight: active ? '600' : '400',
-			textDecoration: 'none', fontSize: '12.5px'
+			textDecoration: 'none', fontSize: '12px', whiteSpace: 'nowrap',
+			display: 'inline-block'
 		});
 	}
 
@@ -384,6 +320,223 @@
 			background: '#fff', border: '1px solid ' + C.borderStrong, color: '#23405f',
 			borderRadius: '9px', padding: '7px 15px', fontSize: '12.5px', fontFamily: FONT
 		});
+	}
+
+	/* ----------------------------------------------------------- header -- */
+
+	function headerHtml() {
+		return '<div style="' + st({
+			display: 'flex', alignItems: 'center', gap: '10px',
+			padding: '11px 13px',
+			background: 'linear-gradient(135deg,#16294a 0%,#1e3a68 55%,#2e5896 100%)',
+			color: '#fff'
+		}) + '">' +
+			'<div style="' + st({
+				width: '34px', height: '34px', borderRadius: '10px',
+				background: '#0b1a30', display: 'flex', alignItems: 'center',
+				justifyContent: 'center', flex: '0 0 auto',
+				boxShadow: '0 4px 14px rgba(0,0,0,.35)'
+			}) + '">' + logoSvg(23) + '</div>' +
+
+			'<div style="' + st({
+				flex: '1 1 auto', minWidth: '0', overflow: 'hidden'
+			}) + '">' +
+			'  <div style="' + st({
+				fontSize: '13px', fontWeight: '600', letterSpacing: '.3px',
+				whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+			}) + '">EasyEDA 智能设计助手</div>' +
+			'  <div id="eai-sub" style="' + st({
+				fontSize: '11px', opacity: '.78', marginTop: '2px',
+				whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+			}) + '">正在读取文档…</div>' +
+			'</div>' +
+
+			/* the two tabs live in the title bar — no extra row, no scrollbar */
+			'<div style="' + st({
+				display: 'flex', gap: '4px', alignItems: 'center', flex: '0 0 auto'
+			}) + '">' +
+			'  <a href="#" class="eai-tab eai-active" data-tab="chat" style="' + segCss(true) + '">对话</a>' +
+			'  <a href="#" class="eai-tab" data-tab="log" style="' + segCss(false) + '">日志</a>' +
+			'</div>' +
+
+			iconBtn('eai-btn-clear', '清空会话', ICONS.trash) +
+			iconBtn('eai-btn-settings', '设置', ICONS.settings) +
+			'</div>';
+	}
+
+	/* ------------------------------------------------------------ panel -- */
+
+	function panelHtml() {
+		return styleBlock() + '<div class="eai-root" style="' + st({
+			fontFamily: FONT, fontSize: '13px', color: C.text, lineHeight: '1.6',
+			background: C.bg, margin: '0', padding: '0'
+		}) + '">' +
+			headerHtml() +
+
+			'<div class="eai-pane" data-pane="chat" style="display:block">' +
+			'  <div id="eai-pills" style="' + st({
+				display: 'flex', flexWrap: 'wrap', gap: '7px',
+				padding: '10px 13px', background: C.surface,
+				borderBottom: '1px solid ' + C.border
+			}) + '"></div>' +
+			'  <div id="eai-chat" class="eai-chat" style="' + st({
+				height: '318px', overflowY: 'auto', padding: '13px 14px',
+				background: '#f8fafd'
+			}) + '"></div>' +
+			composeHtml() +
+			'</div>' +
+
+			'<div class="eai-pane" data-pane="log" style="display:none">' +
+			'  <div id="eai-log" class="eai-log" style="' + st({
+				height: '430px', overflowY: 'auto', background: '#101926', color: '#c3d3e6',
+				padding: '12px 14px', fontFamily: MONO, fontSize: '11.5px',
+				lineHeight: '1.55',
+				'user-select': 'text !important',
+				'-webkit-user-select': 'text !important',
+				cursor: 'text'
+			}) + '"></div>' +
+			'</div>' +
+			'</div>';
+	}
+
+	/* ---------------------------------------------------------- compose -- */
+
+	function chipStyle() {
+		return st({
+			display: 'flex', alignItems: 'center', gap: '5px', flex: '0 0 auto',
+			maxWidth: '190px', background: '#f1f5fb', border: '1px solid #dce5f2',
+			borderRadius: '7px', padding: '2px 4px 2px 3px'
+		});
+	}
+
+	function composeHtml() {
+		return '<div style="' + st({
+			padding: '8px 13px 8px', borderTop: '1px solid ' + C.border, background: C.bg
+		}) + '">' +
+			/* the rounded box IS the input; the textarea inside has no chrome */
+			'<div id="eai-inputbox" style="' + st({
+				border: '1px solid ' + C.borderStrong, borderRadius: '12px',
+				background: '#fff', padding: '6px 8px 5px', boxSizing: 'border-box'
+			}) + '">' +
+			'  <textarea id="eai-input" class="eai-in" rows="2" style="' + st({
+				width: '100%', height: '44px', resize: 'none', boxSizing: 'border-box',
+				border: 'none', borderRadius: '8px', padding: '2px 4px',
+				fontSize: '12.5px', fontFamily: FONT, color: C.text,
+				outline: 'none', lineHeight: '1.5', background: 'transparent',
+				display: 'block'
+			}) + '" placeholder="描述需求，或点胶囊按钮填入提示词…&#10;Ctrl + Enter 发送 · 可粘贴图片"></textarea>' +
+
+			'  <div style="' + st({
+				display: 'flex', alignItems: 'center', gap: '6px',
+				marginTop: '3px', minHeight: '28px'
+			}) + '">' +
+			'    <a href="#" id="eai-btn-image" title="添加图片（也可直接粘贴）" style="' + st({
+				width: '26px', height: '26px', borderRadius: '7px', flex: '0 0 auto',
+				display: 'flex', alignItems: 'center', justifyContent: 'center',
+				color: '#5a6b85', textDecoration: 'none', lineHeight: '0'
+			}) + '">' + svgIcon(ICONS.image, 16) + '</a>' +
+			'    <div id="eai-chips" style="' + st({
+				flex: '1 1 auto', minWidth: '0', display: 'flex',
+				alignItems: 'center', gap: '5px', overflow: 'hidden'
+			}) + '"></div>' +
+			'    <button id="eai-send" class="eai-btn" title="发送（Ctrl + Enter）" style="' + st({
+				width: '30px', height: '30px', padding: '0', borderRadius: '9px',
+				background: C.primary, border: '1px solid ' + C.primary, color: '#fff',
+				display: 'flex', alignItems: 'center', justifyContent: 'center',
+				boxShadow: '0 2px 8px rgba(47,111,191,.32)', boxSizing: 'border-box',
+				flex: '0 0 auto'
+			}) + '">' + svgIcon(ICONS.send, 14, '#ffffff') + '</button>' +
+			'  </div>' +
+			'  <input type="file" id="eai-file" accept="image/*" style="display:none">' +
+			'</div>' +
+			'</div>';
+	}
+
+	/* ------------------------------------------------------------ images -- */
+
+	UI.renderChips = function () {
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		var box = $('#eai-chips', UI.dlgPanel);
+		if (!box.length) return;
+		box.empty();
+		pendingImages.forEach(function (img, i) {
+			var chip = $('<div></div>');
+			chip.attr('style', chipStyle());
+			chip.append('<img src="' + img.dataUrl + '" alt="" style="' +
+				st({
+					width: '18px', height: '18px', objectFit: 'cover',
+					borderRadius: '4px', display: 'block', flex: '0 0 auto'
+				}) + '">');
+			chip.append('<span style="' + st({
+				fontSize: '11px', color: '#40536f', whiteSpace: 'nowrap',
+				overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '118px'
+			}) + '">' + U.esc(img.name || '图片') + '</span>');
+			var x = $('<a href="#">&#10005;</a>');
+			x.attr('style', st({
+				fontSize: '10px', color: '#8b96a8', textDecoration: 'none',
+				padding: '0 2px', flex: '0 0 auto', lineHeight: '1'
+			}));
+			x.on('click', function (e) {
+				e.preventDefault();
+				UI.removeImage(i);
+			});
+			chip.append(x);
+			box.append(chip);
+		});
+	};
+
+	UI.removeImage = function (i) {
+		if (i < 0 || i >= pendingImages.length) return;
+		pendingImages.splice(i, 1);
+		UI.renderChips();
+	};
+
+	UI.attachImageFile = function (file, silent) {
+		if (!file) return;
+		if (!/^image\//i.test(file.type || '')) return;
+		if (pendingImages.length >= 4) {
+			UI.appendMsg('sys', '最多附加 4 张图片。');
+			return;
+		}
+		var reader = new FileReader();
+		reader.onload = function () {
+			var dataUrl = String(reader.result || '');
+			pendingImages.push({
+				dataUrl: dataUrl,
+				base64: dataUrl.split(',')[1] || '',
+				mediaType: file.type || 'image/png',
+				name: file.name || ('粘贴的图片 ' + (pendingImages.length + 1))
+			});
+			UI.renderChips();
+			if (!silent) UI.appendMsg('sys', '已附加图片：' + (file.name || '剪贴板图片'));
+		};
+		reader.readAsDataURL(file);
+	};
+
+	/** Pulls image files out of a ClipboardEvent / DragEvent. */
+	function imagesFromEvent(ev) {
+		var out = [];
+		var e = (ev && (ev.originalEvent || ev)) || {};
+		var dt = e.clipboardData || e.dataTransfer;
+		if (dt) {
+			var items = dt.items;
+			var i;
+			if (items) {
+				for (i = 0; i < items.length; i++) {
+					if (items[i].kind === 'file' && /^image\//.test(items[i].type || '')) {
+						var f = items[i].getAsFile();
+						if (f) out.push(f);
+					}
+				}
+			}
+			if (!out.length && dt.files) {
+				for (i = 0; i < dt.files.length; i++) {
+					if (/^image\//.test(dt.files[i].type || '')) out.push(dt.files[i]);
+				}
+			}
+		}
+		return out;
 	}
 
 	/* ------------------------------------------------------------ panel -- */
@@ -400,8 +553,8 @@
 
 		var ctl = EAI.dlg({
 			title: 'AI 助手',
-			width: 920,
-			height: 700,
+			width: 740,
+			height: 620,
 			modal: false,
 			content: panelHtml()
 		});
@@ -427,20 +580,28 @@
 		});
 		$('#eai-file', $d).on('change', function () {
 			var f = this.files && this.files[0];
-			if (!f) return;
-			var reader = new FileReader();
-			reader.onload = function () {
-				var dataUrl = String(reader.result || '');
-				pendingImage = {
-					dataUrl: dataUrl,
-					base64: dataUrl.split(',')[1] || '',
-					mediaType: f.type || 'image/png'
-				};
-				$('#eai-imgbadge', $d).css('display', 'inline-block');
-				UI.appendMsg('sys', '已附加图片：' + f.name);
-			};
-			reader.readAsDataURL(f);
+			if (f) UI.attachImageFile(f);
 			this.value = '';
+		});
+
+		/* paste an image straight into the composer */
+		$('#eai-input', $d).on('paste', function (e) {
+			var files = imagesFromEvent(e);
+			if (!files.length) return;
+			e.preventDefault();
+			files.forEach(function (f) { UI.attachImageFile(f); });
+		});
+
+		/* …or drop one onto it */
+		$('#eai-inputbox', $d).on('dragover', function (e) {
+			e.preventDefault();
+			$(this).css('border-color', C.primary);
+		}).on('dragleave', function () {
+			$(this).css('border-color', C.borderStrong);
+		}).on('drop', function (e) {
+			e.preventDefault();
+			$(this).css('border-color', C.borderStrong);
+			imagesFromEvent(e).forEach(function (f) { UI.attachImageFile(f); });
 		});
 
 		$('.eai-tab', $d).on('click', function (e) {
@@ -448,10 +609,13 @@
 			UI.activateTab($(this).data('tab'));
 		});
 
-		$('#eai-send', $d).on('click', function () { UI.send(); });
-		$('#eai-stop', $d).on('click', function () {
-			EAI.agent.stop();
-			UI.appendMsg('sys', '已请求停止。');
+		$('#eai-send', $d).on('click', function () {
+			if (busy) {
+				EAI.agent.stop();
+				UI.appendMsg('sys', '正在停止…（等待当前请求返回）');
+				return;
+			}
+			UI.send();
 		});
 		$('#eai-input', $d).on('keydown', function (e) {
 			if (e.keyCode === 13 && (e.ctrlKey || e.metaKey)) { e.preventDefault(); UI.send(); }
@@ -487,11 +651,11 @@
 		var $ = EAI.jq;
 		history.length = 0;
 		lastReport = '';
-		pendingImage = null;
+		pendingImages.length = 0;
 		UI._presetReport = false;
 		UI._previewMd = '';
 		$('#eai-chat', UI.dlgPanel).empty();
-		$('#eai-imgbadge', UI.dlgPanel).css('display', 'none');
+		UI.renderChips();
 		var ta = $('#eai-input', UI.dlgPanel);
 		if (ta.length) ta.val('');
 		UI.appendMsg('sys', '会话已清空，可以开始新的对话。');
@@ -564,12 +728,12 @@
 			? ((cfg.provider === 'anthropic' ? 'Claude' : 'OpenAI') + ' · ' + cfg.model)
 			: '未配置';
 		if (!cfg.apiKey) txt = '未配置';
-		var stEl = $('#eai-state', UI.dlgPanel);
-		if (stEl.length) stEl.text(txt).attr('title', EAI.llm.endpoint(cfg));
 		var sub = $('#eai-sub', UI.dlgPanel);
 		if (sub.length) {
 			try {
-				sub.text(EAI.eda.docKindLabel() + ' · ' + (EAI.eda.activeTitle() || '未打开文档'));
+				sub.text(EAI.eda.docKindLabel() + ' · ' +
+					(EAI.eda.activeTitle() || '未打开文档') + ' · ' + txt)
+					.attr('title', EAI.llm.endpoint(cfg));
 			} catch (e) { /* ignore */ }
 		}
 	};
@@ -594,9 +758,26 @@
 				: role === 'err' ? '#c0392b' : '#8c9aad';
 		return st({
 			width: '28px', height: '28px', borderRadius: '9px', flex: '0 0 auto',
-			background: bg, color: '#fff', display: 'flex',
-			alignItems: 'center', justifyContent: 'center', fontSize: '13px'
+			background: bg, color: '#ffffff', display: 'flex',
+			alignItems: 'center', justifyContent: 'center'
 		});
+	}
+
+	function avatarIcon(role) {
+		if (role === 'user') {
+			return svgIcon('<circle cx="12" cy="8" r="3.4"/>' +
+				'<path d="M5.6 20c0-3.5 2.9-5.8 6.4-5.8s6.4 2.3 6.4 5.8"/>', 15);
+		}
+		if (role === 'ai') {
+			return svgIcon('<path d="M11.4 3.6l1.6 4.2 4.2 1.6-4.2 1.6-1.6 4.2-1.6-4.2L5.6 9.4l4.2-1.6z"/>' +
+				'<path d="M18 15.2l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/>', 15);
+		}
+		if (role === 'err') {
+			return svgIcon('<path d="M12 4.6l8.4 14.8H3.6z"/><path d="M12 10v4"/>' +
+				'<circle cx="12" cy="16.8" r="0.7"/>', 15);
+		}
+		return svgIcon('<circle cx="12" cy="12" r="8.4"/><path d="M12 11v5"/>' +
+			'<circle cx="12" cy="8.1" r="0.7"/>', 15);
 	}
 
 	UI.appendMsg = function (role, text, opts) {
@@ -606,24 +787,108 @@
 		if (!box.length) return null;
 		opts = opts || {};
 
-		var icon = role === 'user' ? '&#128100;' : role === 'ai' ? '&#129302;' : role === 'err' ? '!' : 'i';
-		var who = role === 'user' ? '你' : role === 'ai' ? 'AI' : role === 'err' ? '错误' : '系统';
+		var isUser = role === 'user';
+		var who = isUser ? '你' : role === 'ai' ? 'AI' : role === 'err' ? '错误' : '系统';
 
-		var el = $('<div class="eai-msg">');
-		el.attr('style', st({ display: 'flex', gap: '10px', marginBottom: '11px', alignItems: 'flex-start' }));
-		el.append('<div style="' + avatarStyle(role) + '">' + icon + '</div>');
+		var el = $('<div class="eai-msg"></div>');
+		el.attr('style', st({
+			display: 'flex', gap: '9px', marginBottom: '11px', alignItems: 'flex-start',
+			flexDirection: isUser ? 'row-reverse' : 'row'
+		}));
+		el.append('<div style="' + avatarStyle(role) + '">' + avatarIcon(role) + '</div>');
 
-		var body = $('<div style="' + st({ flex: '1 1 auto', minWidth: '0' }) + '"></div>');
-		body.append('<div style="' + st({ fontSize: '11px', color: C.muted, marginBottom: '3px' }) + '">' + who + '</div>');
-		var bubble = $('<div class="eai-bubble" style="' + bubbleStyle(role) + '"></div>');
+		var body = $('<div></div>');
+		body.attr('style', st({
+			flex: '1 1 auto', minWidth: '0', display: 'flex',
+			flexDirection: 'column',
+			alignItems: isUser ? 'flex-end' : 'stretch'
+		}));
+		body.append('<div style="' + st({
+			fontSize: '11px', color: C.muted, marginBottom: '3px',
+			textAlign: isUser ? 'right' : 'left'
+		}) + '">' + who + '</div>');
+
+		var raw = (opts.raw !== undefined) ? opts.raw : (text || '');
+
+		var bubble = $('<div class="eai-bubble"></div>');
+		bubble.attr('style', bubbleStyle(role) + (isUser ? ';max-width:82%' : ''));
 		if (opts.html) bubble.html(opts.html);
 		else bubble.text(text || '');
+		bubble.data('eai-raw', raw);
 
 		body.append(bubble);
+
+		/* a copy button under every AI / error answer — handy to paste into
+		   a bug report */
+		if ((role === 'ai' || role === 'err') && raw) {
+			var foot = $('<div></div>');
+			foot.attr('style', st({
+				display: 'flex', gap: '6px', marginTop: '3px',
+				justifyContent: isUser ? 'flex-end' : 'flex-start'
+			}));
+			var cbtn = $('<a href="#" title="复制这条内容"></a>');
+			cbtn.attr('style', st({
+				display: 'inline-flex', alignItems: 'center', gap: '4px',
+				color: '#8794a8', textDecoration: 'none', fontSize: '11px',
+				padding: '2px 7px 2px 5px', borderRadius: '6px',
+				background: 'transparent', lineHeight: '1.6'
+			}));
+			cbtn.append(svgIcon(ICONS.copy, 13));
+			cbtn.append(document.createTextNode(' 复制'));
+			cbtn.on('click', function (e) {
+				e.preventDefault();
+				UI.copyText(bubble.data('eai-raw') || '', cbtn);
+			});
+			foot.append(cbtn);
+			body.append(foot);
+		}
+
 		el.append(body);
 		box.append(el);
 		box[0].scrollTop = box[0].scrollHeight;
 		return bubble;
+	};
+
+	/** Clipboard write with a graceful fallback + inline feedback. */
+	UI.copyText = function (text, btn) {
+		var label = (btn && btn.length && btn[0]) ? btn[0].innerHTML : '';
+
+		function feedback(ok) {
+			if (!btn || !btn.length) return;
+			btn.text(ok ? '已复制' : '复制失败')
+				.css('color', ok ? '#1d7a3e' : '#932626');
+			setTimeout(function () {
+				btn.html(label).css('color', '#8794a8');
+			}, 1500);
+		}
+
+		function legacy() {
+			try {
+				var ta = document.createElement('textarea');
+				ta.value = text;
+				ta.setAttribute('readonly', 'readonly');
+				ta.style.position = 'fixed';
+				ta.style.top = '-1000px';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.select();
+				var ok = document.execCommand('copy');
+				document.body.removeChild(ta);
+				return ok;
+			} catch (e) { return false; }
+		}
+
+		try {
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(String(text)).then(
+					function () { feedback(true); },
+					function () { feedback(legacy()); });
+			} else {
+				feedback(legacy());
+			}
+		} catch (e) {
+			feedback(legacy());
+		}
 	};
 
 	UI.appendTool = function (name, args) {
@@ -657,12 +922,49 @@
 		return chip;
 	};
 
+	var logSeq = 0;
+
 	UI.appendLog = function (line) {
 		if (!UI.dlgPanel) return;
 		var $ = EAI.jq;
 		var box = $('#eai-log', UI.dlgPanel);
 		if (!box.length) return;
-		box.append(document.createTextNode(line + '\n'));
+		logSeq++;
+		/* JSON / multi-line payloads are collapsed into one wrapped line so
+		   the log stays compact */
+		line = String(line == null ? '' : line)
+			.split(String.fromCharCode(10))
+			.map(function (x) { return x.trim(); })
+			.filter(function (x) { return x.length > 0; })
+			.join(' ')
+			.replace(String.fromCharCode(13), ' ');
+
+		var row = $('<div></div>');
+		row.attr('style', st({
+			display: 'flex', gap: '8px', padding: '1px 0', alignItems: 'flex-start'
+		}));
+
+		var num = $('<span></span>');
+		num.attr('style', st({
+			flex: '0 0 30px', textAlign: 'right', color: '#5b6b82',
+			opacity: '.8',
+			'user-select': 'text !important',
+			'-webkit-user-select': 'text !important'
+		}));
+		num.text(logSeq);
+
+		var txt = $('<span></span>');
+		txt.attr('style', st({
+			flex: '1 1 auto', minWidth: '0',
+			whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+			'user-select': 'text !important',
+			'-webkit-user-select': 'text !important',
+			cursor: 'text'
+		}));
+		txt.text(line);
+
+		row.append(num).append(txt);
+		box.append(row);
 		box[0].scrollTop = box[0].scrollHeight;
 	};
 
@@ -742,7 +1044,9 @@
 				boxSizing: 'border-box', width: '100%'
 			}) + '">' +
 				'<div id="eai-report-body" style="' + st({
-					padding: '18px 22px', boxSizing: 'border-box', width: '100%'
+					padding: '18px 22px', boxSizing: 'border-box', width: '100%',
+					'user-select': 'text !important',
+					'-webkit-user-select': 'text !important'
 				}) + '"></div>' +
 				'<div style="' + st({
 					padding: '10px 22px', borderTop: '1px solid ' + C.border,
@@ -786,6 +1090,24 @@
 
 	/* ------------------------------------------------------------- send -- */
 
+	/** Swaps the send arrow for a stop square while the agent is running. */
+	UI.setBusy = function (on) {
+		busy = !!on;
+		if (!UI.dlgPanel) return;
+		var $ = EAI.jq;
+		var btn = $('#eai-send', UI.dlgPanel);
+		if (!btn.length) return;
+		if (on) {
+			btn.html(svgIcon(ICONS.stop, 13, '#ffffff'))
+				.attr('title', '停止')
+				.css({ background: '#c05353', borderColor: '#c05353' });
+		} else {
+			btn.html(svgIcon(ICONS.send, 14, '#ffffff'))
+				.attr('title', '发送（Ctrl + Enter）')
+				.css({ background: C.primary, borderColor: C.primary });
+		}
+	};
+
 	UI.send = function () {
 		if (busy) { UI.appendMsg('sys', '正在处理，请稍候或点「停止」。'); return; }
 		if (!UI.dlgPanel) { UI.openPanel(); return; }
@@ -793,7 +1115,7 @@
 
 		var ta = $('#eai-input', UI.dlgPanel);
 		var text = (ta.val() || '').trim();
-		if (!text && !pendingImage) return;
+		if (!text && !pendingImages.length) return;
 
 		if (!EAI.cfg.ready()) {
 			UI.appendMsg('err', '还没有配置模型。请先在「设置」里填写接口地址、API Key 和模型名。');
@@ -803,15 +1125,15 @@
 
 		var userMsg = { role: 'user', content: [] };
 		if (text) userMsg.content.push({ type: 'text', text: text });
-		if (pendingImage) {
+		pendingImages.forEach(function (img) {
 			userMsg.content.push({
-				type: 'image', mediaType: pendingImage.mediaType, data: pendingImage.base64
+				type: 'image', mediaType: img.mediaType, data: img.base64
 			});
-		}
+		});
 
 		ta.val('');
-		pendingImage = null;
-		$('#eai-imgbadge', UI.dlgPanel).css('display', 'none');
+		pendingImages.length = 0;
+		UI.renderChips();
 
 		UI.appendMsg('user', text || '(图片)');
 		history.push(userMsg);
@@ -820,9 +1142,7 @@
 
 	UI.runAgent = function (msgs) {
 		var $ = EAI.jq;
-		busy = true;
-		$('#eai-send', UI.dlgPanel).prop('disabled', true).css('opacity', '.55');
-		$('#eai-stop', UI.dlgPanel).css('display', 'inline-block');
+		UI.setBusy(true);
 
 		var cfg = EAI.cfg.current();
 		var system = {
@@ -853,8 +1173,12 @@
 				if (!UI.dlgPanel) return;
 				if (ev.type === 'text' && ev.text) {
 					lastText = ev.text;
-					if (!aiBubble) aiBubble = UI.appendMsg('ai', '', { html: UI.mdToHtml(ev.text) });
-					else aiBubble.html(UI.mdToHtml(ev.text));
+					if (!aiBubble) {
+						aiBubble = UI.appendMsg('ai', '', { html: UI.mdToHtml(ev.text), raw: ev.text });
+					} else {
+						aiBubble.html(UI.mdToHtml(ev.text));
+						aiBubble.data('eai-raw', ev.text);
+					}
 					var box = $('#eai-chat', UI.dlgPanel);
 					if (box.length) box[0].scrollTop = box[0].scrollHeight;
 				} else if (ev.type === 'tool') {
@@ -867,9 +1191,12 @@
 			var finalText = String(r.text || '').trim();
 			if (finalText) {
 				history.push({ role: 'assistant', content: [{ type: 'text', text: finalText }] });
-				if (!aiBubble) UI.appendMsg('ai', '', { html: UI.mdToHtml(finalText) });
+				if (!aiBubble) UI.appendMsg('ai', '', { html: UI.mdToHtml(finalText), raw: finalText });
 				/* only the review / analysis features produce a report card */
 				if (UI._presetReport) UI.showReport(finalText);
+			} else if (r.limitReached) {
+				UI.appendMsg('err', '达到「最大工具步数」上限，模型仍未给出最终结论。' +
+					'可以在设置里把这个值调大，或再发一句「继续」。');
 			} else if (lastText) {
 				UI.appendMsg('sys', '模型只返回了中间说明（已在上方显示），没有给出最终结论。' +
 					'可以再发一句「请给出最终报告」，或换一个指令跟随更好的模型。');
@@ -885,12 +1212,8 @@
 			}
 			EAI.log('agent failed: ' + msg, 'error');
 		}).then(function () {
-			busy = false;
+			UI.setBusy(false);
 			UI._presetReport = false;
-			if (UI.dlgPanel) {
-				$('#eai-send', UI.dlgPanel).prop('disabled', false).css('opacity', '1');
-				$('#eai-stop', UI.dlgPanel).css('display', 'none');
-			}
 			UI.refreshStatus();
 		});
 	};
@@ -1061,7 +1384,11 @@
 				border: '1px solid ' + C.border, borderRadius: '9px', padding: '10px 12px',
 				whiteSpace: 'pre-wrap', wordBreak: 'break-all',
 				color: '#43536b', maxHeight: '110px', overflow: 'auto', lineHeight: '1.6'
-			}) + '">' + U.esc(EAI.diagnostics()) + '</div>' +
+			}) + '">' + EAI.diagnostics().split('\n').map(function (l) {
+				return '<div style="' + st({
+					whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+				}) + '">' + U.esc(l) + '</div>';
+			}).join('') + '</div>' +
 			'</div>' +
 
 			/* ---------------- footer ---------------- */

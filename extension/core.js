@@ -330,7 +330,7 @@
 			'background:#ffffff', 'border-radius:14px',
 			'box-shadow:0 24px 70px rgba(9,20,38,.38)',
 			'display:flex', 'flex-direction:column', 'overflow:hidden',
-			'font-family:"Microsoft YaHei","Segoe UI",Verdana,sans-serif'
+			"font-family:'Microsoft YaHei','Segoe UI',Verdana,sans-serif"
 		].join(';');
 
 		var headCss = [
@@ -351,7 +351,10 @@
 			'text-decoration:none', 'font-size:15px', 'line-height:1', 'flex:0 0 auto'
 		].join(';');
 
-		var bodyCss = 'flex:1 1 auto;overflow:auto;position:relative;min-height:0';
+		/* the editor disables text selection globally; turn it back on for
+		   the dialog content so the log / report can be copied */
+		var bodyCss = 'flex:1 1 auto;overflow:auto;position:relative;min-height:0;' +
+			'user-select:text !important;-webkit-user-select:text !important;cursor:auto';
 
 		var root = $('<div>').attr('style', maskCss).attr('class', 'eai-mask');
 		var card = $('<div>').attr('style', cardCss).attr('class', 'eai-window');

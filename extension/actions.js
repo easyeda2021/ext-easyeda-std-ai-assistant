@@ -225,7 +225,8 @@
 				spicePin: pin.number === undefined ? '' : String(pin.number),
 				display: pin.visible === false ? 'hide' : 'show',
 				shapeType: 'group',
-				gId: id
+				gId: id,
+				locked: false
 			},
 			name: {
 				x: (pin.nameX === undefined ? pin.x - 5 : pin.nameX) + ox,
@@ -253,6 +254,20 @@
 			path: {
 				pathString: path,
 				pinColor: pin.pinColor || '#880000'
+			},
+			/*
+			 * bc.pin() unconditionally reads pin.dot.visible and
+			 * pin.clock.visible — leaving them out makes the serializer throw
+			 * "Cannot read properties of undefined (reading 'visible')".
+			 */
+			dot: {
+				visible: pin.dotVisible ? 1 : 0,
+				x: dotX,
+				y: dotY
+			},
+			clock: {
+				visible: 0,
+				pathString: ''
 			}
 		};
 	}
