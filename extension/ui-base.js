@@ -69,18 +69,19 @@
 
 	function logoSvg(size) {
 		size = size || 26;
-		return '<svg viewBox="0 0 32 32" width="' + size + '" height="' + size + '" style="display:block">' +
-			'<defs><linearGradient id="eaiG1" x1="0" y1="0" x2="0" y2="1">' +
-			'<stop offset="0" stop-color="#7df3fc"/><stop offset="1" stop-color="#16c2dd"/></linearGradient></defs>' +
-			'<g stroke="#7df3fc" stroke-width="1.7" stroke-linecap="round">' +
-			'<path d="M12.2 10.4 V11.8"/><path d="M16 10.4 V11.8"/><path d="M19.8 10.4 V11.8"/>' +
-			'<path d="M12.2 24.2 V25.6"/><path d="M16 24.2 V25.6"/><path d="M19.8 24.2 V25.6"/>' +
-			'<path d="M6.4 13.6 H7.8"/><path d="M6.4 17.2 H7.8"/><path d="M6.4 20.8 H7.8"/>' +
-			'<path d="M24.2 13.6 H25.6"/><path d="M24.2 17.2 H25.6"/><path d="M24.2 20.8 H25.6"/></g>' +
-			'<rect x="7.8" y="11.8" width="16.4" height="12.4" rx="2" fill="url(#eaiG1)"/>' +
-			'<rect x="11.4" y="15" width="9.2" height="6" rx="1" fill="#0d2b46"/>' +
-			'<path d="M23.5 2.3 L24.75 6.05 L28.5 7.3 L24.75 8.55 L23.5 12.3 L22.25 8.55 L18.5 7.3 L22.25 6.05 Z" fill="#ffc44d"/>' +
-			'<path d="M7.6 4.2 L8.4 6.4 L10.6 7.2 L8.4 8 L7.6 10.2 L6.8 8 L4.6 7.2 L6.8 6.4 Z" fill="#a5f0ff"/>' +
+		return '<svg viewBox="0 0 32 32" width="' + size + '" height="' + size + '" ' +
+			'style="display:block">' +
+			'<rect x="1" y="1" width="30" height="30" rx="8" fill="#142a4d"/>' +
+			'<g fill="none" stroke="#7df3fc" stroke-width="1.7" stroke-linecap="round" ' +
+			'stroke-linejoin="round">' +
+			'<path d="M9.2 23.6 L16 11.4 L22.8 23.6"/>' +
+			'<path d="M12.2 18.4 H19.8"/></g>' +
+			'<g fill="#0e1e36" stroke="#7df3fc" stroke-width="1.6">' +
+			'<circle cx="16" cy="11.4" r="2.3"/>' +
+			'<circle cx="9.2" cy="23.6" r="2"/>' +
+			'<circle cx="22.8" cy="23.6" r="2"/></g>' +
+			'<path d="M23.6 3.4 l1.05 2.75 2.75 1.05 -2.75 1.05 -1.05 2.75 ' +
+			'-1.05 -2.75 -2.75 -1.05 2.75 -1.05z" fill="#ffc24d"/>' +
 			'</svg>';
 	}
 	UI.logoSvg = logoSvg;

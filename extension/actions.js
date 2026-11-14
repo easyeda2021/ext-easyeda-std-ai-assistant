@@ -82,6 +82,35 @@
 		return { ok: true, designator: designator, value: value, parameter: key || 'value' };
 	};
 
+	/**
+	 * Writes several library attributes (c_para keys) at once.
+	 * @param {string} designator
+	 * @param {Object} patch  { package:'0603', 'Manufacturer Part':'HT1621B', … }
+	 */
+	A.setComponentParams = function (designator, patch) {
+		var json = EAI.eda.activeJson();
+		var hit = findComponent(json, designator);
+		if (!hit) return { ok: false, error: 'component ' + designator + ' not found' };
+		if (!patch || !Object.keys(patch).length) return { ok: false, error: 'nothing to write' };
+
+		var shape = EAI.api('getShape', { id: hit.gId, cmdKey: 'schlib' });
+		if (!shape || !shape.head) return { ok: false, error: 'cannot read the component' };
+
+		var cPara = shape.head.c_para || '';
+		var next = cPara;
+		Object.keys(patch).forEach(function (k) {
+			if (patch[k] === undefined || patch[k] === null || patch[k] === '') return;
+			next = A.setCParaParam(next, k, patch[k]);
+		});
+		if (next === cPara) return { ok: false, error: 'nothing changed' };
+
+		EAI.api('updateShape', {
+			shapeType: 'schlib',
+			jsonCache: { gId: hit.gId, head: { c_para: next } }
+		});
+		return { ok: true, designator: designator, applied: patch };
+	};
+
 	/** Renames a component (its designator / prefix). */
 	A.setComponentDesignator = function (designator, newDesignator) {
 		var json = EAI.eda.activeJson();

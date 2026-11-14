@@ -233,7 +233,19 @@
 					'用中文输出，表格呈现 BOM，并单独列出需要人工确认的位号。'
 			});
 			list.push({
-				id: 'sch-gen', label: 'AI 生成原理图', icon: '✨',
+				id: 'sch-standardize', label: '器件标准化', icon: '',
+				report: true,
+				prompt: '请帮我把这份原理图的元件属性补全：\n\n' +
+					'1. 先调用 audit_components，列出缺封装 / 缺型号 / 缺供应商 / 缺供应商编号的元件；\n' +
+					'2. 对每个元件，结合位号、器件名、数值推断封装与型号；' +
+					'能确定的可以调用 search_library 查系统库，拿到真实的封装 / 厂商 / LCSC 料号；\n' +
+					'3. 用 set_component_params 把 package / Manufacturer Part / Supplier / ' +
+					'Supplier Part 写回元件属性；\n' +
+					'4. 无法确定的（例如只有 R1 10k、没有具体型号），列出来让我确认，不要瞎填。\n\n' +
+					'最后汇报：补全了哪些元件、还剩哪些需要人工确认。'
+			});
+			list.push({
+				id: 'sch-gen', label: '生成原理图', icon: '✨',
 				prompt: '请按下面的需求帮我绘制原理图。\n\n需求：（在这里描述你的电路，例如：\n' +
 					'“STM32F103 最小系统，8MHz 晶振，SWD 调试口，3.3V LDO 供电，两个去耦电容”）\n\n' +
 					'必须按这个流程来：\n' +
@@ -247,7 +259,7 @@
 					'完成后简要说明放了哪些器件、哪些来自系统库、哪些是现场生成的。'
 				});
 			list.push({
-				id: 'sch-symbol', label: '图片识别符号', icon: '🧩',
+				id: 'sch-symbol', label: '识别符号', icon: '🧩',
 				prompt: '请只针对**本条消息**附带的图片生成一个符号（历史会话里的图片一律忽略）。\n\n' +
 					'用 create_symbol 一次画完：矩形框 + 每个引脚（编号/名称/电气类型）+ 属性。\n' +
 					'要求：\n' +

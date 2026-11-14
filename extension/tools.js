@@ -383,6 +383,80 @@
 
 		/* ---------------------------------------------------------------- */
 		{
+			name: 'audit_components',
+			description:
+				'Check every component of the open schematic for incomplete library ' +
+				'attributes: missing package, part number (Manufacturer Part), supplier, ' +
+				'supplier part number or value. Returns one line per incomplete component; ' +
+				'fix them with set_component_params.',
+			parameters: P.obj({}),
+			run: function () {
+				var err = need(['sch']);
+				if (err) return err;
+				var comps = D.components(sheetJson());
+				if (!comps.length) return '当前原理图没有元件。';
+
+				var rows = [];
+				comps.forEach(function (c) {
+					var p = c.params || {};
+					var missing = [];
+					if (!c.package) missing.push('封装');
+					if (!p['Manufacturer Part'] && !p['Supplier Part']) missing.push('型号');
+					if (!p['Supplier'] && !p['Supplier Part']) missing.push('供应商');
+					if (!p['Supplier Part']) missing.push('供应商编号');
+					if (!c.value) missing.push('值');
+					if (!missing.length) return;
+					rows.push('- ' + (c.designator || '?') +
+						' | ' + (c.name || '-') +
+						' | 值 ' + (c.value || '-') +
+						' | 缺：' + missing.join('、'));
+				});
+
+				var head = '共 ' + comps.length + ' 个元件，' + rows.length + ' 个属性不全';
+				if (!rows.length) return head + '（全部完整）';
+				return head + '\n' + rows.join('\n') +
+					'\n\n用 set_component_params 逐个补全；不确定的型号/料号不要瞎填，列出来让用户确认。';
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
+			name: 'set_component_params',
+			description:
+				'Write library attributes onto one component (c_para). Use it to fill what ' +
+				'audit_components reported: package, Manufacturer Part, Supplier, ' +
+				'Supplier Part, value.',
+			parameters: P.obj({
+				designator: P.str('Component designator, e.g. U1'),
+				package: P.str('Package / footprint, e.g. 0603 or SSOP-24'),
+				manufacturerPart: P.str('Part number, e.g. HT1621B'),
+				supplier: P.str('Supplier name, e.g. LCSC'),
+				supplierPart: P.str('Supplier part number, e.g. C14243'),
+				value: P.str('Value / comment')
+			}, ['designator']),
+			run: function (args) {
+				var err = need(['sch']);
+				if (err) return err;
+				var patch = {};
+				if (args.package) patch.package = args.package;
+				if (args.manufacturerPart) patch['Manufacturer Part'] = args.manufacturerPart;
+				if (args.supplier) patch.Supplier = args.supplier;
+				if (args.supplierPart) patch['Supplier Part'] = args.supplierPart;
+				if (args.value) patch.value = args.value;
+				if (!Object.keys(patch).length) return '没有给出任何要写入的属性。';
+
+				var r = A.setComponentParams(args.designator, patch);
+				if (!r.ok) return '写入失败：' + r.error;
+				var parts = [];
+				Object.keys(r.applied).forEach(function (k) {
+					parts.push(k + '=' + r.applied[k]);
+				});
+				return '已更新 ' + args.designator + '：' + parts.join(', ');
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
 			name: 'place_part',
 			description: 'Place a component on the schematic at a position. Built-in parts: ' +
 				'R, C, L, D, LED, SW, and GENERIC (use pinCount for a generic n-pin IC). ' +
@@ -619,7 +693,8 @@
 		var kind = EAI.eda.docKind();
 		var READ = ['get_document_info', 'capture_image', 'locate_component'];
 		var SCH = ['get_components', 'get_netlist', 'get_bom', 'set_component_value',
-			'set_component_designator', 'search_library', 'place_device',
+			'set_component_designator', 'audit_components', 'set_component_params',
+			'search_library', 'place_device',
 			'place_part', 'create_wire', 'create_net_label', 'create_symbol'];
 		var PCB = ['get_pcb_info', 'get_components'];
 

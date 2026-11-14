@@ -22,7 +22,6 @@ const ID_FILE = path.join(__dirname, '.extension-id.json');
 
 const REQUIRED = [
 	'manifest.json', 'locale.txt', 'icon.svg',
-	'icon16.png', 'icon24.png', 'icon32.png',
 	'core.js', 'llm.js', 'eda.js', 'eda-netlist.js', 'actions.js', 'tools.js', 'agent.js',
 	'ui-base.js', 'ui.js', 'ui-report.js', 'ui-settings.js', 'ui-about.js', 'main.js'
 ];

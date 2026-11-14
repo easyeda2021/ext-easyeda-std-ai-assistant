@@ -70,13 +70,8 @@
 				display: 'flex', flexDirection: 'column',
 				flex: '1 1 auto', minHeight: '0', overflow: 'hidden'
 			}) + '">' +
-			'  <div id="eai-pills" style="' + st({
-				display: 'flex', flexWrap: 'wrap', gap: '7px',
-				padding: '10px 13px', background: C.surface,
-				borderBottom: '1px solid ' + C.border
-			}) + '"></div>' +
 			'  <div id="eai-chat" class="eai-chat" style="' + st({
-				flex: '1 1 auto', minHeight: '110px', overflowY: 'auto',
+				flex: '1 1 auto', minHeight: '90px', overflowY: 'auto',
 				padding: '13px 14px', background: '#f8fafd'
 			}) + '"></div>' +
 			/* drag up/down to grow the input box, shrink the conversation */
@@ -87,6 +82,11 @@
 			}) + '"><span style="' + st({
 				width: '36px', height: '3px', borderRadius: '3px', background: '#d3dceb'
 			}) + '"></span></div>' +
+			/* quick actions sit right above the input box */
+			'  <div id="eai-pills" style="' + st({
+				display: 'flex', flexWrap: 'wrap', gap: '5px',
+				padding: '7px 13px 2px', background: C.bg
+			}) + '"></div>' +
 			composeHtml() +
 			'</div>' +
 
@@ -105,7 +105,7 @@
 
 	function composeHtml() {
 		return '<div style="' + st({
-			padding: '8px 13px 8px', borderTop: '1px solid ' + C.border, background: C.bg
+			padding: '5px 13px 8px', background: C.bg
 		}) + '">' +
 			/*
 			 * One rounded box.  The textarea fills it; the image button, the
@@ -259,9 +259,9 @@
 		}
 
 		var ctl = EAI.dlg({
-			title: 'AI 助手',
+			title: U.t('eai.panel.title', 'AI 助手'),
 			width: 600,
-			height: 600,
+			height: 640,
 			modal: false,
 			content: panelHtml()
 		});
@@ -425,13 +425,11 @@
 			var el = $('<span class="eai-pill"></span>');
 			el.attr('data-preset', p.id);
 			el.attr('style', st({
-				display: 'inline-flex', alignItems: 'center', gap: '6px',
-				padding: '7px 14px', borderRadius: '999px',
-				border: '1px solid #d6e0f0', background: '#ffffff',
-				color: '#25405f', fontSize: '12.5px', userSelect: 'none',
-				whiteSpace: 'nowrap', cursor: 'pointer'
+				display: 'inline-block', padding: '4px 11px', borderRadius: '999px',
+				border: '1px solid #dbe4f1', background: '#ffffff',
+				color: '#2b4462', fontSize: '11.5px', userSelect: 'none',
+				whiteSpace: 'nowrap', cursor: 'pointer', lineHeight: '1.5'
 			}));
-			el.append('<span style="font-size:13px">' + (p.icon || '•') + '</span>');
 			el.append(document.createTextNode(p.label));
 			el.on('click', function () { UI.usePreset(p); });
 			box.append(el);

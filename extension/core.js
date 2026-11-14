@@ -126,6 +126,11 @@
 		} catch (e) { /* ignore */ }
 	}
 
+	/** Current editor language code, e.g. "en" / "zh-hans". */
+	EAI.lang = function () {
+		try { return (EAI.L && EAI.L._curr) || 'en'; } catch (e) { return 'en'; }
+	};
+
 	EAI.toast = function (msg, level) {
 		try {
 			if (EAI.jq && EAI.jq.messager) {

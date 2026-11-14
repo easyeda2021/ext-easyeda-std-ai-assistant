@@ -14,7 +14,7 @@
 extension/                 ← 扩展本体
   manifest.json            ← 清单（Std 必需）
   locale.txt               ← 中英文案
-  icon.svg / icon*.png     ← 图标（tools/make-icons.js 生成 PNG）
+  icon.svg                 ← 扩展图标（只用 SVG，编辑器已不需要多尺寸 PNG）
   core.js                  ← 命名空间 / 配置存储 / 扩展 ID 探测 / 日志诊断
   llm.js                   ← OpenAI + Anthropic 客户端（对话 / 视觉 / 工具调用）
   eda.js                   ← 数据层：元件、网表、BOM、PCB、截图、定位
@@ -168,6 +168,8 @@ ID 使用 `\w+`（标准版安装器只接受这个格式），并且保存在 `
 | `get_components` | 元件或封装列表 |
 | `get_netlist` | 全工程网表 |
 | `get_bom` | 物料清单 |
+| `audit_components` | 找出缺封装 / 型号 / 供应商 / 料号的元件 |
+| `set_component_params` | 批量写入 c_para 属性（封装、Manufacturer Part、供应商…） |
 | `get_pcb_info` | 板框、封装位置、网络、过孔数 |
 | `capture_image` | 截图并附到下一条消息 |
 | `locate_component` | 选中并高亮位号 |
@@ -305,6 +307,15 @@ api key      : set (51 chars)
 - **移除扩展不会清除这些数据**：编辑器的 Remove 只删扩展脚本（IndexedDB 里的文件），
   不会动 `extensionConfig` 和 `localStorage`，所以 API Key 会保留。这是平台行为。
   想彻底清除，用「设置 → 清除已保存的配置」。
+
+## 多语言
+
+`locale.txt` 用 `[en]` / `[zh-cn]` 分段，编辑器加载扩展时解析进全局 i18n 缓存；
+`Locale.i18n(key)` 先查当前语言 `Locale._curr`，再回退 `en`。
+
+**当前状态**：菜单项、工具栏按钮、各弹窗标题已经走 `U.t('eai.xxx', '中文默认')`，
+所以编辑器语言是英文时会自动显示英文；对话框内部的正文文案仍是中文写死，
+如需完整英文界面，把文案逐个替换成 `U.t('eai.xxx', '中文')` 并在 `locale.txt` 增加对应条目即可。
 
 ## 代码结构约定
 

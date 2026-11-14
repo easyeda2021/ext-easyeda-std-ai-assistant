@@ -52,14 +52,14 @@
 	/* --------------------------------------------------------------- menu -- */
 
 	var submenu = [
-		{ text: 'AI 助手…', cmd: EAI.cmd('panel') },
-		{ text: '设置…', cmd: EAI.cmd('settings') },
-		{ text: '关于…', cmd: EAI.cmd('about') }
+		{ text: U.t('eai.menu.panel', 'AI 助手…'), cmd: EAI.cmd('panel') },
+		{ text: U.t('eai.menu.settings', '设置…'), cmd: EAI.cmd('settings') },
+		{ text: U.t('eai.menu.about', '关于…'), cmd: EAI.cmd('about') }
 	];
 
 	try {
 		EAI.api('createExtensionMenu', [{
-			text: 'AI 助手',
+			text: U.t('eai.menu.root', 'AI 助手'),
 			fordoctype: 'all',
 			submenu: submenu
 		}]);
@@ -76,8 +76,8 @@
 
 		EAI.api('createToolbarButton', {
 			icon: icon,
-			title: 'AI 助手',
-			text: 'AI助手',
+			title: U.t('eai.menu.root', 'AI 助手'),
+			text: U.t('eai.menu.root', 'AI 助手'),
 			fordoctype: 'sch,pcb,schlib,pcblib',
 			cmd: EAI.cmd('panel'),
 			menu: submenu

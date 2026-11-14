@@ -272,12 +272,12 @@
 			primaryBtn('保存', 'eai-save') +
 			'<button id="eai-test" class="eai-btn" style="' + ghostBtn() + '">测试连接</button>' +
 			'<button id="eai-copy-diag" class="eai-btn" style="' + ghostBtn() + '">复制诊断信息</button>' +
-			'<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除已保存的配置</button>' +
+			'<button id="eai-clear-config" class="eai-btn" style="' + ghostBtn() + '">清除配置</button>' +
 			'</div></div>' +
 			'</div>';
 
 		var ctl = EAI.dlg({
-			title: 'AI 设置',
+			title: U.t('eai.settings.title', 'AI 设置'),
 			width: 620,
 			height: 720,
 			modal: true,

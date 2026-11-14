@@ -231,7 +231,7 @@
 			'</div>';
 
 		var ctl = EAI.dlg({
-			title: '运行日志',
+			title: U.t('eai.log.title', '运行日志'),
 			width: 700,
 			height: 540,
 			modal: false,
