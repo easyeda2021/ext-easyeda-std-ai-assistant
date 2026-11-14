@@ -275,15 +275,7 @@
 	};
 
 	function defaultConfig() {
-		var p = {
-			id: cfgId('p'),
-			name: 'OpenAI',
-			protocol: 'openai',
-			baseUrl: 'https://api.openai.com/v1',
-			apiKey: '',
-			collapsed: false,
-			models: [newModel('gpt-6.0')]
-		};
+		/* no provider out of the box — the user adds their own */
 		return {
 			language: 'zh',
 			temperature: 0.2,
@@ -291,8 +283,8 @@
 			timeout: 300,
 			maxSteps: 12,
 			extraHeaders: '',
-			providers: [p],
-			active: { providerId: p.id, modelId: p.models[0].id }
+			providers: [],
+			active: { providerId: '', modelId: '' }
 		};
 	}
 

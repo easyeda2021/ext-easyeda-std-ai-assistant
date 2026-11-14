@@ -235,8 +235,17 @@
 			addOptions += '<option value="' + i + '">+ ' + U.esc(pr.label) + '</option>';
 		});
 
+		var cards = (draft.providers || []).map(providerCard).join('');
+		if (!cards) {
+			cards = '<div style="' + st({
+				padding: '18px 12px', textAlign: 'center', fontSize: '12px',
+				color: C.muted, border: '1px dashed ' + C.borderStrong,
+				borderRadius: '9px', marginBottom: '10px', lineHeight: '1.8'
+			}) + '">还没有供应商<br/>在下面选择预设或「自定义」来添加一个</div>';
+		}
+
 		return '' +
-			(draft.providers || []).map(providerCard).join('') +
+			cards +
 			'<div style="' + st({ marginTop: '4px' }) + '">' +
 			'<select id="eai-add-provider" style="' + st({
 				width: '100%', height: '32px', padding: '0 9px', borderRadius: '8px',

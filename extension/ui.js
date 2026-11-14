@@ -145,14 +145,13 @@
 				flex: '1 1 auto', minWidth: '0', display: 'flex',
 				alignItems: 'center', gap: '5px', overflow: 'hidden'
 			}) + '"></div>' +
-			'  </div>' +
-
-			'  <select id="eai-model-pick" title="切换模型" style="' + st({
+			'    <select id="eai-model-pick" title="切换模型" style="' + st({
 				height: '26px', maxWidth: '132px', boxSizing: 'border-box', padding: '0 6px',
 				borderRadius: '999px', border: '1px solid #dbe4f1', background: '#fff',
 				fontSize: '11px', color: '#2b4462', fontFamily: FONT, outline: 'none',
 				flex: '0 0 auto'
 			}) + '"></select>' +
+			'  </div>' +
 
 			'  <button id="eai-send" class="eai-btn" title="发送（Ctrl + Enter）" style="' + st({
 				position: 'absolute', right: '7px', bottom: '6px',
