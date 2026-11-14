@@ -37,6 +37,26 @@ function readOrCreateId(forceNew) {
 	return id;
 }
 
+/**
+ * Every build bumps the patch number:  0.0.1 -> 0.0.2 -> 0.0.3 ...
+ * The manifest.json in extension/ is the single source of truth; the
+ * extension reads the same value at runtime for its About / diagnostics.
+ */
+function bumpVersion() {
+	const file = path.join(SRC, 'manifest.json');
+	const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+	const parts = String(manifest.version || '0.0.0').split('.').map(function (n) {
+		const v = parseInt(n, 10);
+		return isFinite(v) && v >= 0 ? v : 0;
+	});
+	while (parts.length < 3) parts.push(0);
+	parts[2] += 1;
+	const from = manifest.version || '0.0.0';
+	manifest.version = parts.join('.');
+	fs.writeFileSync(file, JSON.stringify(manifest, null, '\t') + '\n');
+	return { from, to: manifest.version };
+}
+
 function main() {
 	const forceNew = process.argv.indexOf('--new-id') >= 0;
 	const id = readOrCreateId(forceNew);
@@ -51,6 +71,8 @@ function main() {
 		process.exit(1);
 	}
 
+	const { from, to } = bumpVersion();
+
 	/* build dist/<id>/ */
 	const out = path.join(DIST, id);
 	fs.mkdirSync(out, { recursive: true });
@@ -61,6 +83,7 @@ function main() {
 		'AI 助手 · EasyEDA 标准版扩展',
 		'============================',
 		'',
+		'版本：v' + to,
 		'扩展 ID（安装时填写）：' + id,
 		'',
 		'安装步骤',
@@ -83,6 +106,7 @@ function main() {
 	console.log('packed → dist/' + id);
 	console.log('  files: ' + files.length);
 	console.log('  extension id: ' + id);
+	console.log('  version: ' + from + ' -> ' + to);
 	console.log('\nInstall: 高级 → 扩展 → 扩展配置 → 加载扩展, 全选 dist/' + id + ' 下的文件, ID 填 ' + id);
 }
 

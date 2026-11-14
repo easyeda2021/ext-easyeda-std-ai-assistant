@@ -44,6 +44,12 @@ node tools/pack.js --new-id   # 需要换一个 ID 时
 ID 使用 `\w+`（标准版安装器只接受这个格式），并且保存在 `tools/.extension-id.json`，
 重新打包不会变——**命令名依赖这个 ID（`extension-<id>-<cmd>`），安装后不要改**。
 
+**版本号**：从 `0.0.1` 起，**每执行一次 `node tools/pack.js` 末位 +1**（0.0.1 → 0.0.2 → …）。
+`extension/manifest.json` 的 `version` 是唯一来源，扩展运行时也从这个清单读取，
+「关于」页与「设置 → 诊断」里显示的就是当前构建号。
+
+`dist/` 是构建产物，**不纳入 git**（见 `.gitignore`），随时可用 `node tools/pack.js` 重新生成。
+
 ### 2. 在编辑器里安装
 
 1. EasyEDA 标准版 → 菜单 **高级 → 扩展 → 扩展配置** → **加载扩展**。

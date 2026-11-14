@@ -12,7 +12,7 @@
 
 	var EAI = (window.EAI = window.EAI || {});
 
-	EAI.ver = '2.0.0';
+	EAI.ver = '0.0.1';   /* fallback — replaced by manifest.version below */
 	EAI.L = typeof Locale !== 'undefined' ? Locale : null;
 	EAI.jq = typeof $ !== 'undefined' ? $ : null;
 	EAI.api = typeof api !== 'undefined' ? api : null;
@@ -487,4 +487,13 @@
 		lines.push('api key      : ' + (cfg.apiKey ? 'set (' + cfg.apiKey.length + ' chars)' : 'missing'));
 		return lines.join('\n');
 	};
+	/* the real version lives in manifest.json and is bumped by tools/pack.js */
+	try {
+		var _inst = (window.easyeda && window.easyeda.extension &&
+			window.easyeda.extension.instances || {})[EAI.discoverExtId()];
+		if (_inst && _inst.manifest && _inst.manifest.version) {
+			EAI.ver = String(_inst.manifest.version);
+		}
+	} catch (e) { /* keep the fallback */ }
+
 })();
