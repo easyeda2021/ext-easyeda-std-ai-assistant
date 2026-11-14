@@ -3,12 +3,12 @@
  * ui.js — AI panel, settings dialog and about dialog
  *
  * NOTE ON STYLING
- *   The dialogs are created by api('createDialog') and rendered inside the
- *   editor's own DOM.  A stylesheet injected into <head> was not reliable
- *   there, so every structural/visual rule below is written as an INLINE
- *   style (the editor itself styles its UI that way, so inline styles are
- *   guaranteed to work).  A small <style> block is still shipped for
- *   :hover / transitions / markdown fallbacks only.
+ *   The dialogs are our own floating windows (EAI.dlg in core.js) — the
+ *   platform's api('createDialog') is an EasyUI dialog that starts closed
+ *   and did not pick up our styles reliably.  Every structural/visual rule
+ *   below is an INLINE style, so it lands no matter what stylesheet the
+ *   host page ships.  A small <style> block is still included for
+ *   :hover / transitions only.
  * ===================================================================== */
 (function () {
 	'use strict';
@@ -672,8 +672,12 @@
 	 * separate "report" tab any more.
 	 */
 	UI.showReport = function (markdown) {
-		lastReport = markdown || '';
+		lastReport = String(markdown || '').trim();
 		if (!lastReport || !UI.dlgPanel) return null;
+		if (lastReport.length < 40) {
+			UI.appendMsg('err', '报告内容为空，可能是接口返回异常，请查看「日志」页。');
+			return null;
+		}
 		return UI.appendReportCard(lastReport);
 	};
 
@@ -682,7 +686,9 @@
 		var box = $('#eai-chat', UI.dlgPanel);
 		if (!box.length) return null;
 
-		var size = (md.length / 1024).toFixed(1) + ' KB';
+		var size = md.length < 1024
+			? (md.length + ' 字符')
+			: ((md.length / 1024).toFixed(1) + ' KB');
 
 		var card = $('<div data-eai-card="1"></div>');
 		card.attr('style', st({
@@ -832,7 +838,8 @@
 					'1. 需要数据时先调用工具，不要凭空猜测电路内容；',
 					'2. 提到元件时使用准确位号（R12、C3、U1），这样用户能点它定位；',
 					'3. 修改文档前先说明你打算改什么；修改后用简短话语汇报；',
-					'4. 用 Markdown 输出，网表/BOM 用表格；评审结论按「严重 / 一般 / 建议」分级。'
+					'4. 用 Markdown 输出，网表/BOM 用表格；评审结论按「严重 / 一般 / 建议」分级。',
+					'5. 工具调用结束后必须给出**完整**的最终结论；不要只写「接下来将…」就停止。'
 				].join('\n')
 			}]
 		};
@@ -857,15 +864,19 @@
 				}
 			}
 		}).then(function (r) {
-			var text = r.text || lastText;
-			if (text) {
-				history.push({ role: 'assistant', content: [{ type: 'text', text: text }] });
-				if (!aiBubble) UI.appendMsg('ai', '', { html: UI.mdToHtml(text) });
+			var finalText = String(r.text || '').trim();
+			if (finalText) {
+				history.push({ role: 'assistant', content: [{ type: 'text', text: finalText }] });
+				if (!aiBubble) UI.appendMsg('ai', '', { html: UI.mdToHtml(finalText) });
 				/* only the review / analysis features produce a report card */
-				if (UI._presetReport) UI.showReport(text);
+				if (UI._presetReport) UI.showReport(finalText);
+			} else if (lastText) {
+				UI.appendMsg('sys', '模型只返回了中间说明（已在上方显示），没有给出最终结论。' +
+					'可以再发一句「请给出最终报告」，或换一个指令跟随更好的模型。');
+			} else {
+				UI.appendMsg('err', '模型没有返回内容。请检查接口地址与模型名，或查看「日志」页。');
 			}
 			if (r.aborted) UI.appendMsg('sys', '已停止。');
-			else if (!text) UI.appendMsg('err', '模型没有返回内容。');
 		}).catch(function (err) {
 			var msg = err && err.message ? err.message : String(err);
 			UI.appendMsg('err', msg);

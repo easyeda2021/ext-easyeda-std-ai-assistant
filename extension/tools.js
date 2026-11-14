@@ -112,7 +112,8 @@
 				var err = need(['sch', 'schlib']);
 				if (err) return err;
 				var comps = D.components(sheetJson());
-				return ok(comps.map(function (c) {
+				var CAP = 300;
+				return ok(comps.slice(0, CAP).map(function (c) {
 					var o = {
 						designator: c.designator, name: c.name, package: c.package,
 						value: c.value, x: c.x, y: c.y, rotation: c.rotation
@@ -128,35 +129,117 @@
 		/* ---------------------------------------------------------------- */
 		{
 			name: 'get_netlist',
-			description: 'Build the electrical net list of the whole schematic project ' +
-				'(all sheets) and return it together with the connectivity statistics. ' +
-				'Each net lists the pins (designator.pin) that belong to it.',
+			description:
+				'Return a CONDENSED net list of the whole schematic project, grouped by ' +
+				'importance: floating (single pin) nets, naming conflicts, unnamed nets, ' +
+				'power / ground rails, then signal nets. Large nets are abbreviated to ' +
+				'a pin count plus the first few members, so the answer stays small. ' +
+				'Pass {net:"NETNAME"} to get every pin of one net.',
 			parameters: P.obj({
-				maxPinsPerNet: P.num('Truncate very large nets (default 200).')
+				net: P.str('Optional: return the full pin list of this net only.'),
+				maxPins: P.num('Max members shown per net (default 6, max 40).'),
+				maxNets: P.num('Max nets listed (default 120).')
 			}),
 			run: function (args) {
+				args = args || {};
 				var err = need(['sch']);
 				if (err) return err;
+
 				var sheets = D.projectSchematics();
 				if (!sheets.length) return 'No schematic sheet found in the project.';
 				var nl = D.netlist(sheets);
-				var limit = (args && args.maxPinsPerNet) || 200;
+
+				function pinName(p) { return p.designator + '.' + p.number; }
+
+				function members(n, max) {
+					var arr = n.pins.map(pinName);
+					if (!arr.length) return '(no pins)';
+					if (arr.length <= max) return arr.join(', ');
+					return arr.slice(0, max).join(', ') + ' …+ ' + (arr.length - max);
+				}
+
+				/* ---- one net in full ------------------------------------- */
+				if (args.net) {
+					var want = String(args.net).toUpperCase();
+					var hit = null;
+					for (var i = 0; i < nl.nets.length; i++) {
+						if (String(nl.nets[i].name).toUpperCase() === want) { hit = nl.nets[i]; break; }
+					}
+					if (!hit) return 'Net "' + args.net + '" not found.';
+					var out = ['Net ' + hit.name + '  {' + hit.pins.length + ' pins}' +
+						(hit.conflict ? '  [NAME CONFLICT]' : '') +
+						(hit.auto ? '  [unnamed]' : '')];
+					hit.labels.forEach(function (l) {
+						out.push('  label ' + l.name + ' (' + l.kind + ', ' + l.sheet + ')');
+					});
+					out.push('  pins: ' + hit.pins.map(function (p) {
+						return p.designator + '.' + p.number + (p.name ? '(' + p.name + ')' : '');
+					}).join(', '));
+					return out.join('\n');
+				}
+
+				var maxPins = Math.min(Number(args.maxPins) || 6, 40);
+				var maxNets = Math.min(Number(args.maxNets) || 120, 400);
+				var POWER = /^(GND|AGND|DGND|PGND|VCC|VDD|VSS|VEE|VBAT|VIN|VBUS|[+\-]?\d+V\d*|\d+V\d*|[+\-]?\d+V\d+)$/i;
+
+				var buckets = { float: [], conflict: [], unnamed: [], power: [], signal: [] };
+				nl.nets.forEach(function (n) {
+					if (n.conflict) buckets.conflict.push(n);
+					else if (n.pins.length === 1) buckets.float.push(n);
+					else if (n.auto) buckets.unnamed.push(n);
+					else if (POWER.test(String(n.name).replace(/\s/g, ''))) buckets.power.push(n);
+					else buckets.signal.push(n);
+				});
 
 				var lines = [];
-				lines.push('nets: ' + nl.stats.nets + ', named: ' + nl.stats.namedNets +
-					', conflicts: ' + nl.stats.conflicts +
-					', pins: ' + nl.stats.pins + ', wires: ' + nl.stats.wires +
-					', sheets: ' + nl.stats.sheets);
-				nl.nets.forEach(function (n) {
-					var pins = n.pins.map(function (p) { return p.designator + '.' + p.number; });
-					var shown = pins.slice(0, limit).join(', ');
-					if (pins.length > limit) shown += ' …(+' + (pins.length - limit) + ')';
-					lines.push('- ' + n.name +
-						(n.auto ? ' (auto)' : '') +
-						(n.conflict ? ' [CONFLICT: ' + n.labels.map(function (l) { return l.name; }).join('/') + ']' : '') +
-						' {' + pins.length + '} : ' + (shown || '(unconnected)'));
-				});
-				return lines.join('\n');
+				lines.push('## 概要');
+				lines.push('图纸 ' + nl.stats.sheets + ' · 网络 ' + nl.stats.nets +
+					'（有名字 ' + nl.stats.namedNets + '，未命名 ' +
+					(nl.stats.nets - nl.stats.namedNets) + '，命名冲突 ' + nl.stats.conflicts +
+					'）· 引脚 ' + nl.stats.pins + ' · 导线 ' + nl.stats.wires);
+				lines.push('单引脚网络 ' + buckets.float.length +
+					' · 电源/地 ' + buckets.power.length +
+					' · 信号 ' + buckets.signal.length);
+				lines.push('');
+
+				var shown = 0;
+				function section(title, arr, opts) {
+					if (!arr.length) return;
+					lines.push('## ' + title + '（' + arr.length + '）');
+					var budget = (opts && opts.max) || maxNets;
+					arr.slice(0, budget).forEach(function (n) {
+						var line = '- ' + n.name +
+							(n.auto ? ' (未命名)' : '') +
+							(n.conflict ? ' [冲突: ' +
+								n.labels.map(function (l) { return l.name; }).join(' / ') + ']' : '') +
+							' {' + n.pins.length + '} ' +
+							members(n, (opts && opts.pins) || maxPins);
+						lines.push(line);
+						shown++;
+					});
+					if (arr.length > budget) {
+						lines.push('- …还有 ' + (arr.length - budget) + ' 个同类网络');
+					}
+					lines.push('');
+				}
+
+				/* the small, actionable buckets are always listed in full */
+				section('需要关注：命名冲突', buckets.conflict, { pins: 20, max: 40 });
+				section('需要关注：单引脚网络（可能悬空）', buckets.float, { pins: 4, max: 60 });
+				section('未命名网络（建议加网络标签）', buckets.unnamed, { pins: 4, max: 40 });
+				section('电源与地', buckets.power, { pins: 6, max: 40 });
+				section('信号网络', buckets.signal, { pins: 6, max: 80 });
+
+				if (!shown) lines.push('（没有可列出的网络）');
+				lines.push('');
+				lines.push('提示：需要某个网络的完整引脚，调用 get_netlist({"net":"网络名"})。');
+
+				var text = lines.join('\n');
+				if (text.length > 14000) {
+					text = text.slice(0, 14000) +
+						'\n…（网表过长已截断，可用 net 参数查询单个网络）';
+				}
+				return text;
 			}
 		},
 
@@ -174,7 +257,7 @@
 				var bom = D.bom(comps);
 				var lines = ['| designators | qty | package | value | name |',
 					'|---|---|---|---|---|'];
-				bom.forEach(function (b) {
+				bom.slice(0, 200).forEach(function (b) {
 					lines.push('| ' + b.designators.join(', ') + ' | ' + b.qty + ' | ' +
 						(b.package || '') + ' | ' + (b.value || '') + ' | ' + (b.name || '') + ' |');
 				});

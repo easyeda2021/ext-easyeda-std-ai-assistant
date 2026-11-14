@@ -418,10 +418,14 @@
 
 			$(document).on('mousemove.eaidrag', function (e) {
 				if (!dragging) return;
-				card.css({
-					left: (pos.left + e.clientX - startX) + 'px',
-					top: (pos.top + e.clientY - startY) + 'px'
-				});
+				var w = card[0].offsetWidth || width;
+				var h = card[0].offsetHeight || height;
+				var vw = window.innerWidth || 1200;
+				var vh = window.innerHeight || 800;
+				/* never let the window be dragged completely off screen */
+				var left = Math.min(Math.max(-w + 80, pos.left + e.clientX - startX), vw - 80);
+				var top = Math.min(Math.max(0, pos.top + e.clientY - startY), vh - 42);
+				card.css({ left: left + 'px', top: top + 'px' });
 			}).on('mouseup.eaidrag', function () {
 				dragging = false;
 			});

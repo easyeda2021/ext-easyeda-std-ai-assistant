@@ -598,6 +598,14 @@
 				try { obj = JSON.parse(t); }
 				catch (e) { throw new Error('Invalid JSON response: ' + t.slice(0, 300)); }
 
+				/* some gateways answer 200 with an error payload */
+				if (obj && (obj.error || obj.type === 'error' || obj.success === false)) {
+					var em = obj.error
+						? (obj.error.message || obj.error.type || JSON.stringify(obj.error))
+						: (obj.message || obj.msg || 'unknown error');
+					throw new Error('API error: ' + String(em).slice(0, 300));
+				}
+
 				var out = { text: '', toolCalls: [], finish: '' };
 
 				if (provider === 'anthropic') {

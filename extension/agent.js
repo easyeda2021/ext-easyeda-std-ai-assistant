@@ -48,6 +48,8 @@
 		var maxSteps = Number(opts.maxSteps || cfg.maxSteps || 12);
 		var steps = 0;
 		var toolsDisabled = false;
+		var nudged = false;      /* asked once for a final answer without tools */
+		var usedTools = false;
 
 		function step() {
 			if (AG.abort) return Promise.resolve({ text: '', steps: steps, aborted: true, messages: messages });
@@ -74,8 +76,26 @@
 				if (res.text) emit(onEvent, { type: 'text', text: res.text });
 
 				if (!res.toolCalls || !res.toolCalls.length) {
+					/*
+					 * The model sometimes stops right after the tool results and
+					 * returns nothing at all.  Nudge it once instead of handing
+					 * the user an empty report.
+					 */
+					if (!res.text && usedTools && !nudged && steps < maxSteps) {
+						nudged = true;
+						messages.push({
+							role: 'user',
+							content: [{
+								type: 'text',
+								text: '请根据上面工具返回的结果，直接用 Markdown 给出最终结论，不要再调用工具。'
+							}]
+						});
+						return step();
+					}
 					return { text: res.text, steps: steps, messages: messages };
 				}
+
+				usedTools = true;
 
 				/* record the assistant turn (text + the tool calls it asked for) */
 				messages.push({

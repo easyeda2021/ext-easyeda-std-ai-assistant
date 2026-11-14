@@ -157,7 +157,7 @@ ID 使用 `\w+`（标准版安装器只接受这个格式），并且保存在 `
 | 跨窗口命令 | `window.callByEditor({func,args,uuid})`（顶层窗口命令总线） |
 | 截图 | `api('getSource','svg')` → canvas → PNG dataURL |
 | 持久化 | `api('readConfig' / 'saveConfig')` + `localStorage` |
-| 对话框 | `api('createDialog', opts)`（EasyUI dialog） |
+| 对话框 | 自绘浮层（不依赖 `api('createDialog')` 的 EasyUI 行为） |
 
 ### 三个踩过的坑（也是这次的修复点）
 
@@ -176,6 +176,20 @@ ID 使用 `\w+`（标准版安装器只接受这个格式），并且保存在 `
 3. **`editorCall` 到不了顶层命令**
    `getWireNetName` 只存在于**顶层窗口**的 `callByEditor` 里，不在编辑器 iframe 的命令表中。
    必须 `window.callByEditor({func:'getWireNetName', args:[pts], uuid: 当前 tabid})`。
+
+### 发给模型的网表是精简过的
+
+`get_netlist` 不会把整张网表原样丢给模型，而是**按重要性分组并压缩**：
+
+1. **概要**：图纸数 / 网络数（有名字、未命名、冲突）/ 引脚数 / 导线数；
+2. **命名冲突** → 全量列出（最多 40 条）；
+3. **单引脚网络（可能悬空）** → 全量列出（最多 60 条，每条只给 4 个成员）；
+4. **未命名网络** → 最多 40 条，每条 4 个成员；
+5. **电源与地**（GND/VCC/3V3…）→ 最多 40 条，每条 6 个成员；
+6. **信号网络** → 最多 80 条，每条 6 个成员。
+
+超出部分显示 `…+ N`，整体再按 14000 字符兜底截断。
+需要某个网络的完整引脚时，模型可以再调 `get_netlist({"net":"SPI_MOSI"})` 做**按需下钻**，这样上下文不会被网表撑爆。
 
 ### 网表是怎么来的（能不能直接劫持编辑器菜单命令？）
 
@@ -241,6 +255,8 @@ api key      : set (51 chars)
 | 菜单平铺在「高级」下 | 旧版本残留，删除后重装；本版只注册一个带 submenu 的条目 |
 | 发送后报 CORS | Electron `webSecurity: true`，换用允许跨域的接口地址 |
 | 提示没有工具调用 | 模型不支持 function calling，换模型（如 gpt-4o / claude / deepseek-chat） |
+| 模型只回一句"接下来…"就停了 | 已内置一次自动追问；若仍出现，换指令跟随更好的模型 |
+| 报告卡片显示"报告内容为空" | 说明接口返回了空/错误响应，查看「日志」页里的 `API error` |
 
 ---
 
