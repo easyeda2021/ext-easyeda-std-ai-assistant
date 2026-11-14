@@ -160,19 +160,20 @@
 		} catch (e) { /* ignore */ }
 		EAI.instances = insts;
 
-		var id = null, k, inst;
 		var ids = Object.keys(insts);
+		var id = null, k, i, inst;
 
-		/* 1 — manifest heuristic */
-		for (k = 0; k < ids.length; k++) {
-			inst = insts[ids[k]];
-			var sc = inst && inst.manifest && inst.manifest.scripts;
-			if (sc && Object.prototype.toString.call(sc) === '[object Array]' &&
-				sc.indexOf('core.js') >= 0) { id = ids[k]; break; }
-		}
-
-		/* 2 — probe every candidate id */
-		if (!id && ids.length) {
+		/*
+		 * 1) Probe — authoritative.  createCommand() drops every key that is not
+		 *    prefixed with "extension-<the real id>-", so registering one key per
+		 *    candidate leaves exactly one survivor.
+		 *
+		 *    This order matters after "remove extension → load again with a new
+		 *    id": the stale instance is still listed in `instances`, and a
+		 *    manifest scan would happily return the OLD id, registering our
+		 *    commands under a name the new menu never fires.
+		 */
+		if (ids.length) {
 			var MARK = '__eai_probe__';
 			ids.forEach(function (cand) {
 				try {
@@ -190,7 +191,6 @@
 				}
 				if (id) break;
 			}
-			/* clean up the probe commands */
 			ids.forEach(function (cand) {
 				try {
 					var cmds = insts[cand] && insts[cand].commands;
@@ -200,6 +200,16 @@
 					});
 				} catch (e) { /* ignore */ }
 			});
+		}
+
+		/* 2) Fallback — the NEWEST instance that loads our scripts. */
+		if (!id && ids.length) {
+			for (i = ids.length - 1; i >= 0; i--) {
+				inst = insts[ids[i]];
+				var sc = inst && inst.manifest && inst.manifest.scripts;
+				if (sc && Object.prototype.toString.call(sc) === '[object Array]' &&
+					sc.indexOf('core.js') >= 0) { id = ids[i]; break; }
+			}
 		}
 
 		EAI.extId = id || 'eai';
@@ -335,7 +345,7 @@
 		].join(';');
 
 		var cardCss = [
-			'pointer-events:auto',
+			'pointer-events:auto', 'position:relative',
 			'width:' + width + 'px', 'max-width:100%',
 			'height:' + height + 'px', 'max-height:92vh',
 			'background:#ffffff', 'border-radius:14px',
@@ -444,6 +454,59 @@
 				dragging = false;
 			});
 		})();
+
+		/* ---- drag the edges to resize ---------------------------------- */
+		if (opts.resizable !== false) {
+			function startResize(mode) {
+				return function (e) {
+					e.preventDefault();
+					e.stopPropagation();
+					var rect = card[0].getBoundingClientRect();
+
+					/* pin the card where it is so the left/top edge stays put */
+					root.css({ display: 'block', padding: '0' });
+					card.css({
+						position: 'fixed', margin: '0',
+						left: rect.left + 'px', top: rect.top + 'px',
+						width: rect.width + 'px', height: rect.height + 'px'
+					});
+
+					var sw = rect.width, sh = rect.height;
+					var sx = e.clientX, sy = e.clientY;
+					$(document).off('.eairesizeDlg');
+
+					$(document).on('mousemove.eairesizeDlg', function (ev) {
+						var maxW = Math.max(360, (window.innerWidth || 1200) - rect.left - 10);
+						var maxH = Math.max(240, (window.innerHeight || 800) - rect.top - 10);
+						if (mode !== 'b') {
+							var w = Math.max(380, Math.min(maxW, sw + ev.clientX - sx));
+							card.css('width', w + 'px');
+						}
+						if (mode !== 'r') {
+							var h = Math.max(260, Math.min(maxH, sh + ev.clientY - sy));
+							card.css('height', h + 'px');
+						}
+					}).on('mouseup.eairesizeDlg', function () {
+						$(document).off('.eairesizeDlg');
+						try {
+							if (opts.onResize) opts.onResize(card[0].offsetWidth, card[0].offsetHeight);
+						} catch (err) { /* ignore */ }
+					});
+				};
+			}
+
+			var gripR = $('<div>').attr('style',
+				'position:absolute;top:0;right:0;width:6px;height:100%;cursor:ew-resize;z-index:5');
+			var gripB = $('<div>').attr('style',
+				'position:absolute;left:0;bottom:0;height:6px;width:100%;cursor:ns-resize;z-index:5');
+			var gripC = $('<div>').attr('style',
+				'position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:6' +
+				';background:linear-gradient(135deg,transparent 50%,#c9d4e4 50%);border-radius:0 0 6px 0');
+			card.append(gripR).append(gripB).append(gripC);
+			gripR.on('mousedown', startResize('r'));
+			gripB.on('mousedown', startResize('b'));
+			gripC.on('mousedown', startResize('both'));
+		}
 
 		/* ESC closes the newest dialog */
 		if (!EAI._dlgEscBound) {

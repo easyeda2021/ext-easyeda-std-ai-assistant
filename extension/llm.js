@@ -42,11 +42,18 @@
 
 		if (provider === 'anthropic') {
 			if (/\/messages$/i.test(base)) return base;
+			/* the other protocol's path was pasted — fix it up */
+			if (/\/chat\/completions$/i.test(base)) {
+				return base.replace(/\/chat\/completions$/i, '/messages');
+			}
 			if (/\/v1$/i.test(base)) return base + '/messages';
 			if (!pathOf(base)) return base + '/v1/messages';
 			return base + '/messages';
 		}
 		if (/\/chat\/completions$/i.test(base)) return base;
+		if (/\/messages$/i.test(base)) {
+			return base.replace(/\/messages$/i, '/chat/completions');
+		}
 		if (/\/v1$/i.test(base)) return base + '/chat/completions';
 		if (!pathOf(base)) return base + '/v1/chat/completions';
 		return base + '/chat/completions';
@@ -381,8 +388,18 @@
 			role: 'user',
 			content: [{ type: 'text', text: 'ping' }]
 		}];
+		var url = L.endpoint(cfg);
 		return L.chat(cfg, msg, {}).then(function (t) {
-			return 'ok: ' + String(t).slice(0, 120);
+			return 'ok: ' + String(t).slice(0, 120) + '  (' + url + ')';
+		}).catch(function (e) {
+			var hint = '';
+			if (e && e.status === 404) {
+				hint = '  → 接口地址可能不对：Anthropic 应为 <base>/v1/messages，' +
+					'OpenAI 应为 <base>/v1/chat/completions。当前实际请求：' + url;
+			}
+			var err = new Error((e && e.message ? e.message : String(e)) + hint);
+			err.status = e && e.status;
+			throw err;
 		});
 	};
 

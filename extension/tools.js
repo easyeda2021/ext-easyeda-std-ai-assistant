@@ -447,11 +447,121 @@
 
 		/* ---------------------------------------------------------------- */
 		{
+			name: 'search_library',
+			description:
+				'Search the EasyEDA (立创EDA) SYSTEM component library for a real part. ' +
+				'Call this FIRST while drawing a schematic: if a matching part exists, ' +
+				'place it with place_device (it then carries the real package, BOM data ' +
+				'and PCB footprint). Only when nothing matches should you fall back to ' +
+				'create_symbol with your own knowledge.',
+			parameters: P.obj({
+				query: P.str('Part number or keyword, e.g. "SSD1306", "AMS1117-3.3", "STM32F103C8T6"'),
+				limit: P.num('How many candidates to return (default 8, max 20).')
+			}, ['query']),
+			run: function (args) {
+				var q = String((args && args.query) || '').trim();
+				if (q.length < 2) return 'Please give at least 2 characters to search for.';
+				var limit = Math.min(Number(args.limit) || 8, 20);
+
+				return fetch('/api/components/search', {
+					method: 'POST',
+					credentials: 'include',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ doctype: [2], wd: q, page: 1 })
+				}).then(function (r) {
+					return r.text().then(function (t) {
+						var obj;
+						try { obj = JSON.parse(t); }
+						catch (e) { throw new Error('search returned non-JSON: ' + t.slice(0, 200)); }
+						if (!obj || obj.success === false) {
+							throw new Error((obj && (obj.message || obj.msg)) || 'search failed');
+						}
+						var res = obj.result || {};
+
+						/* lists is either an array or { easyeda:[…], user:[…] } */
+						var items = [];
+						if (Array.isArray(res.lists)) items = res.lists;
+						else if (res.lists && typeof res.lists === 'object') {
+							Object.keys(res.lists).forEach(function (k) {
+								if (Array.isArray(res.lists[k])) items = items.concat(res.lists[k]);
+							});
+						} else if (Array.isArray(res)) {
+							items = res;
+						}
+
+						if (!items.length) {
+							return '系统库没有找到「' + q + '」。' +
+								'请改用 create_symbol（用你自己的知识生成符号：名称 + 引脚编号 + 引脚名称）。';
+						}
+
+						var lines = ['系统库检索「' + q + '」：' + items.length + ' 个结果（显示前 ' +
+							Math.min(limit, items.length) + ' 个）'];
+						items.slice(0, limit).forEach(function (it, i) {
+							var lcsc = it.lcsc && it.lcsc.number ? it.lcsc.number : '';
+							var mfr = (it.extra && (it.extra.Manufacturer || it.extra.manufacturer)) || '';
+							var pkg = it.package || it.packageName || '';
+							lines.push((i + 1) + '. ' + (it.title || '?') +
+								' | 封装 ' + (pkg || '-') +
+								' | 厂商 ' + (mfr || '-') +
+								' | LCSC ' + (lcsc || '-') +
+								' | uuid=' + (it.uuid || '-') +
+								' | docType=' + (it.docType || '2'));
+						});
+						lines.push('');
+						lines.push('若要用其中一个，调用 place_device {"uuid":"…","docType":"…","x":..,"y":..}。');
+						return lines.join('\n');
+					});
+				}).catch(function (e) {
+					return '系统库检索失败：' + (e && e.message ? e.message : e) +
+						'。可以改用 create_symbol 现场生成符号。';
+				});
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
+			name: 'place_device',
+			description:
+				'Place a REAL component from the system library (take the uuid from ' +
+				'search_library) onto the schematic. Prefer this over create_symbol, ' +
+				'because the placed part keeps its package, supplier data and PCB linkage.',
+			parameters: P.obj({
+				uuid: P.str('Device uuid returned by search_library'),
+				docType: P.str('Device docType returned by search_library (default "2")'),
+				x: P.num('x position in schematic units'),
+				y: P.num('y position'),
+				rotation: P.num('0 / 90 / 180 / 270')
+			}, ['uuid', 'x', 'y']),
+			run: function (args) {
+				var err = need(['sch', 'schlib']);
+				if (err) return err;
+				var uuid = String(args.uuid || '').trim();
+				if (!uuid) return 'uuid is required (call search_library first).';
+				try {
+					EAI.api('createShape', {
+						shapeType: 'schlib',
+						uuid: uuid,
+						docType: String(args.docType || '2'),
+						x: args.x,
+						y: args.y,
+						rotation: args.rotation || 0
+					});
+				} catch (e) {
+					return '放置失败：' + e;
+				}
+				return '已从系统库放置器件 (uuid ' + uuid + ') 到 ' + args.x + ',' + args.y +
+					'。该器件带有真实封装与 BOM 信息，不要再用 create_symbol 重复生成。';
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
 			name: 'create_symbol',
 			description:
-				'Create a COMPLETE schematic symbol in one call: a body rectangle, one ' +
-				'independent pin per pin, the designator/name annotations, and the library ' +
-				'attributes (name, package, pre, manufacturer part) written into c_para. ' +
+				'FALLBACK when search_library found nothing: create a COMPLETE schematic ' +
+				'symbol in one call — body rectangle, one independent pin per pin, ' +
+				'designator/name annotations, and the library attributes ' +
+				'(name, package, pre, manufacturer part) written into c_para. ' +
 				'Call it ONCE per symbol — do not capture screenshots to verify or repair ' +
 				'it afterwards. Coordinates are relative to the symbol origin; a pin line ' +
 				'runs from the body end (x,y) to (x+dx, y+dy).',
@@ -509,8 +619,8 @@
 		var kind = EAI.eda.docKind();
 		var READ = ['get_document_info', 'capture_image', 'locate_component'];
 		var SCH = ['get_components', 'get_netlist', 'get_bom', 'set_component_value',
-			'set_component_designator', 'place_part', 'create_wire', 'create_net_label',
-			'create_symbol'];
+			'set_component_designator', 'search_library', 'place_device',
+			'place_part', 'create_wire', 'create_net_label', 'create_symbol'];
 		var PCB = ['get_pcb_info', 'get_components'];
 
 		var allow = READ.slice();
