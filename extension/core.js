@@ -128,7 +128,8 @@
 
 	/** Current editor language code, e.g. "en" / "zh-hans". */
 	EAI.lang = function () {
-		try { return (EAI.L && EAI.L._curr) || 'en'; } catch (e) { return 'en'; }
+		/* unknown -> Chinese: the UI is authored in Chinese */
+		try { return (EAI.L && EAI.L._curr) || 'zh-hans'; } catch (e) { return 'zh-hans'; }
 	};
 
 	EAI.toast = function (msg, level) {
@@ -397,6 +398,12 @@
 		$('body').append(root);
 
 		if (opts.content) body.html(opts.content);
+
+		/* translate the rendered UI when the editor is not Chinese */
+		if (EAI.i18n && EAI.i18n.apply) {
+			EAI.i18n.apply(body[0]);
+			if (EAI.i18n.watch) EAI.i18n.watch(body[0]);
+		}
 
 		var ctl = {
 			el: body,

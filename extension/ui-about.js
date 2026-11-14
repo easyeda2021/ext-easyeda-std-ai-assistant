@@ -72,8 +72,8 @@
 			'<div style="' + st({
 				fontSize: '12px', color: '#3d4d66', lineHeight: '1.75', marginTop: '12px'
 			}) + '">' +
-			'· 内置 <b>Agent 循环</b>，模型通过工具读取网表 / BOM / 截图，并直接修改文档；<br/>' +
-			'· 支持 <b>OpenAI</b> 与 <b>Anthropic</b> 协议，接口地址可完全自定义；<br/>' +
+			'· 内置 Agent 循环：模型通过工具读取网表 / BOM / 截图，并直接修改文档。<br/>' +
+			'· 支持 OpenAI 与 Anthropic 协议，接口地址可完全自定义。<br/>' +
 			'· API Key 仅保存在本机与该扩展配置中。' +
 			'</div>' +
 
