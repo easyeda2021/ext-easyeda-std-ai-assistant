@@ -6,12 +6,18 @@
 
 ---
 
-## 2026-11-15 · v0.0.33
+## 2026-11-15 · v0.0.35
 
-从初版迭代到 0.0.25（`0.0.x` 由每次构建自动递增）。
+从初版迭代到 0.0.35（`0.0.x` 由每次构建自动递增）。
 
 ### 新增
 
+- **开源配套**：新增英文 `README.en.md`（与中文 README 互相跳转）、`AGENTS.md`
+  （仓库约定与工作流）、`.github/workflows/release.yml`（手动触发构建 → 发布 Release）
+- **产物改为「项目名 + 版本号」**：`dist/ext-easyeda-std-ai-assistant-v<版本>.zip`，
+  文件直接位于 zip 根目录；不再用扩展 ID 做目录，`tools/.extension-id.json` 删除
+- `pack.js` 支持 `--version x.y.z` 与 `--no-zip`，内置 zip 实现（不依赖系统 zip）
+- 关于弹窗加入项目地址（新窗口打开）；`EAI.dlg` 支持 `height: 'auto'`
 - **提示词集中管理**：新增 `prompts.js`，角色/全局规则（`P.system`）、各胶囊的
   任务要求（`P.tasks`）、循环催办（`P.nudges`）全部收口，改提示词不用翻业务代码
 - **AI 面板 + Agent 循环**：模型可调用 17 个工具读文档、改图元，形成完整闭环
@@ -58,6 +64,7 @@
 
 ### 修复
 
+- **关于弹窗仍有滚动条**：原固定高度 470px 装不下内容，改为内容自适应（`height: 'auto'`）
 - **报告卡片「下载 Markdown / 下载 HTML」点了没反应**：`ui-report.js` 调用了不存在的
   `U.download`（应为 `EAI.download`），点下去抛 TypeError；卡片与预览弹窗两处一起修正
 - 工具卡片排序时被插进 AI 气泡内部（`bubble.parent()` 拿到的是气泡容器，

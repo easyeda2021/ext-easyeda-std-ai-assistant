@@ -315,14 +315,21 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 ## 7. 构建与发布
 
 ```bash
-node tools/pack.js      # 生成 dist/<id>/，版本末位 +1，打印 ID 与版本
-node tmp/test-*.js      # 离线测试（不依赖 EasyEDA 客户端）
+node tools/pack.js                  # 版本末位 +1，产出目录 + zip
+node tools/pack.js --version 0.1.0  # 指定版本
+node tools/pack.js --no-zip         # 只产出解压目录
+node tmp/test-*.js                  # 离线测试（本地开发脚本，不入库）
 ```
 
-- 扩展 ID 存于 `tools/.extension-id.json`，重打包不变；命令名依赖它，安装后不要改
+- 产物（`dist/`，不入库）：
+  - `dist/ext-easyeda-std-ai-assistant-v<版本>/` —— 解压目录，本地加载用
+  - `dist/ext-easyeda-std-ai-assistant-v<版本>.zip` —— Release 附件，文件位于 zip 根目录
+- zip 由 `pack.js` 内置实现（zlib + 手写中央目录），不依赖系统 `zip`，Windows / CI 通用
+- **扩展 ID 不进入产物**：安装时由用户自行填写，运行时由 `discoverExtId()` 探测；
+  命令名与本地配置以该 ID 为键，所以安装后不要改
 - `manifest.json` 的 `version` 是唯一版本来源，运行时从加载的清单读取（关于页/诊断显示）
-- `dist/` 与 `tmp/` 不入库（`.gitignore`）
-- 安装：高级 → 扩展 → 扩展配置 → 加载扩展 → 全选 `dist/<id>/` 下全部文件 → 填 ID
+- 发布：GitHub Actions → `Release` → Run workflow（版本可选），构建并创建 `v<版本>`
+  Release，附上 zip
 
 ---
 

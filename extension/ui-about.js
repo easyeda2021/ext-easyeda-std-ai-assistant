@@ -78,6 +78,14 @@
 			'</div>' +
 
 			'<div style="' + st({
+				fontSize: '11.5px', color: C.muted, marginTop: '10px'
+			}) + '">项目地址：' +
+			'<a href="https://github.com/easyeda2021/ext-easyeda-std-ai-assistant" data-ext-link="1"' +
+			' target="_blank" rel="noopener noreferrer" style="' + st({
+				color: C.primary, textDecoration: 'none', wordBreak: 'break-all'
+			}) + '">github.com/easyeda2021/ext-easyeda-std-ai-assistant</a></div>' +
+
+			'<div style="' + st({
 				fontSize: '11px', color: C.muted, borderTop: '1px solid #e9eef6',
 				marginTop: '12px', paddingTop: '10px'
 			}) + '">基于嘉立创EDA（EasyEDA）标准版扩展 API 开发，与专业版扩展不通用。</div>' +
@@ -86,13 +94,20 @@
 		var ctl = EAI.dlg({
 			title: U.t('eai.about.title', '关于 AI 助手'),
 			width: 560,
-			height: 470,
+			height: 'auto',
 			modal: true,
 			content: html
 		});
 		if (!ctl) return null;
 		UI.dlgAboutCtl = ctl;
 		UI.dlgAbout = ctl.el;
+
+		/* the editor swallows some in-page links — open the repo in a new tab */
+		ctl.el.on('click', 'a[data-ext-link]', function (e) {
+			e.preventDefault();
+			var url = this.getAttribute('href');
+			try { window.open(url, '_blank', 'noopener,noreferrer'); } catch (err) { /* ignore */ }
+		});
 		return UI.dlgAbout;
 	};
 

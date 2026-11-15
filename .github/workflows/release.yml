@@ -1,0 +1,62 @@
+name: Release
+
+# Manual only: Actions → Release → Run workflow.
+# Builds the extension, zips it as ext-easyeda-std-ai-assistant-v<version>.zip
+# and publishes a GitHub release with that zip attached.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如 0.1.0）。留空则按 manifest 末位 +1'
+        required: false
+        default: ''
+      prerelease:
+        description: '标记为预发布'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax check
+        run: |
+          for f in extension/*.js tools/*.js; do node --check "$f"; done
+
+      - name: Build
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            node tools/pack.js --version "${{ inputs.version }}"
+          else
+            node tools/pack.js
+          fi
+
+      - name: Resolve artifact
+        id: meta
+        run: |
+          ZIP=$(ls dist/*.zip | head -n 1)
+          VER=$(node -p "require('./extension/manifest.json').version")
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          name: v${{ steps.meta.outputs.version }}
+          files: ${{ steps.meta.outputs.zip }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            安装：EasyEDA 标准版 → 高级 → 扩展 → 扩展配置 → 加载扩展，
+            解压后全选全部文件，扩展 ID 自行填写（例如 `aiassistant`）。

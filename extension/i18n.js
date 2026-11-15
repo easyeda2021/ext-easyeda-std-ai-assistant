@@ -59,6 +59,7 @@
 		'已停止。': 'Stopped.',
 		'（图片）': '(image)',
 		'工具调用过程 · 点击展开或收起': 'Tool calls · click to expand',
+		'项目地址：': 'Project: ',
 		'图片': 'Image',
 		'剪贴板图片': 'clipboard image',
 		'还没有配置模型。请先在「设置」里填写接口地址、API Key 和模型名。':

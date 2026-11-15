@@ -1,5 +1,7 @@
 # AI 助手 · EasyEDA 标准版扩展
 
+[English](README.en.md) · 项目地址：<https://github.com/easyeda2021/ext-easyeda-std-ai-assistant>
+
 把大模型接进 **EasyEDA 标准版**（嘉立创EDA 标准版）的原理图与 PCB 编辑器：
 原理图审查、BOM 分析与器件标准化、PCB / 画布视觉评审、按需求生成原理图、图片生成符号。
 
@@ -23,21 +25,27 @@
 
 ## 安装
 
-```bash
-node tools/pack.js     # 生成 dist/<id>/，并打印扩展 ID 与版本号
-```
+从 [Releases](https://github.com/easyeda2021/ext-easyeda-std-ai-assistant/releases)
+下载最新的 `ext-easyeda-std-ai-assistant-v<版本>.zip` 并解压。
 
 1. EasyEDA → **高级 → 扩展 → 扩展配置 → 加载扩展**
-2. **一次性全选** `dist/<id>/` 下的**全部文件**（manifest、locale、icon.svg、所有 .js）
-3. 扩展 ID 填 `pack.js` 打印的那个（例如 `aiassistant`）
+2. **一次性全选**解压出来的**全部文件**（manifest.json、locale.txt、icon.svg、所有 .js）
+3. 扩展 ID 自行填写一个英文标识（例如 `aiassistant`），记住它
 
-> ID 会拼进命令名，**安装后不要改**；升级时先 Remove 旧扩展，再用同一 ID 加载。
+> ID 会拼进命令名、本地配置也以它为键，**安装后不要改**；升级时先移除旧扩展，
+> 再用同一 ID 加载。ID 不需要体现在打包产物里——填入任意合法标识都能工作。
+
+本地构建：
+
+```bash
+node tools/pack.js     # → dist/ext-easyeda-std-ai-assistant-v<版本>.zip
+```
 
 ## 快速使用
 
 - 工具栏「AI 助手」或 **高级 ▸ AI 助手 ▸ AI 助手…** 打开面板
 - 首次使用先点 **设置**：选协议、填接口地址 / API Key / 模型，可「测试连接」
-- 点胶囊（原理图审查 / BOM 分析 / 器件标准化 / 生成原理图 / 识别符号 …）**填入提示词**，
+- 点胶囊（原理图审查 / BOM 分析 / 器件标准化 / 生成原理图 / 识别符号 …）填入需求，
   确认后 **发送**（`Ctrl + Enter`）
 - 审查类功能结束后出现**报告卡片**：可预览或下载 Markdown / HTML
 - header 的**日志**图标打开独立日志窗口，可「复制全部」反馈问题
@@ -48,9 +56,9 @@ node tools/pack.js     # 生成 dist/<id>/，并打印扩展 ID 与版本号
 ```
 extension/              扩展本体
   manifest.json         清单（name / version / icons / scripts）
-  locale.txt            中英文案（菜单与弹窗标题）
+  locale.txt            宿主菜单与标题的本地化词条（编辑器 Locale 直接读取）
   icon.svg              扩展图标（只用 SVG）
-  core.js               命名空间 / 配置 / 扩展 ID 探测 / 日志诊断
+  core.js               命名空间 / 配置 / 扩展 ID 识别 / 日志诊断
   prompts.js            全部系统提示词（角色规则 / 胶囊任务要求 / 循环催办）
   i18n.js               界面全量本地化（中文 → 英文，渲染时按字典替换）
   llm.js                OpenAI + Anthropic 客户端（对话 / 视觉 / 工具调用）
@@ -58,26 +66,36 @@ extension/              扩展本体
   eda-netlist.js        连通性引擎（导线/引脚/网络标签 + 编辑器网络名校核）
   actions.js            写回文档：改值、改属性、画线、放标签、建符号
   tools.js              给模型的工具（JSON Schema + 实现）
-  agent.js              Agent 循环 + 快捷胶囊提示词
+  agent.js              Agent 循环 + 快捷胶囊
   ui-base.js            UI 基础：设计变量 / 内联样式 / 图标 / Markdown
   ui.js                 面板：header、输入框、消息、发送与 Agent 接线
   ui-report.js          报告卡片 + 报告预览 + 日志窗口
   ui-settings.js        设置弹窗
   ui-about.js           关于弹窗
   main.js               引导：菜单、工具栏按钮、命令
-tools/pack.js           打包 + 版本自增（每构建 +1）
-tmp/                    离线测试与分析脚本（不入库）
+tools/pack.js           打包：版本自增 → 目录 + zip 产物
+.github/workflows/      手动触发构建并发布 Release
 ```
 
-## 构建与验证
+## 构建与测试
 
 ```bash
-node tools/pack.js           # 版本末位 +1，输出 dist/<id>/
-node tmp/test-extension.js   # 端到端：加载脚本 → 菜单/弹窗 → 工具 → Agent 循环
-node tmp/test-toolcalls.js   # OpenAI / Anthropic 工具调用格式
-node tmp/test-eda.js         # 元件 / 网表 / BOM
-node tmp/test-llm.js         # 端点拼接与请求体
+node tools/pack.js                  # 版本末位 +1
+node tools/pack.js --version 0.1.0  # 指定版本
+node tools/pack.js --no-zip         # 只生成解压目录
 ```
+
+产物都在 `dist/`（不入库）：
+
+- `dist/ext-easyeda-std-ai-assistant-v<版本>/` —— 解压目录，本地加载用
+- `dist/ext-easyeda-std-ai-assistant-v<版本>.zip` —— Release 附件，文件位于 zip 根目录
+
+离线测试脚本放在 `tmp/`（不入库），本仓库不包含。
+
+## 发布
+
+GitHub Actions → **Release → Run workflow**，可选填版本号；留空则按
+`manifest.json` 末位 +1。工作流会构建并创建同名 tag 的 Release，附上 zip。
 
 - 版本唯一来源：`extension/manifest.json` 的 `version`（关于页与诊断显示的就是它）
 - `dist/`、`tmp/` 不入库（见 `.gitignore`）
@@ -91,8 +109,10 @@ node tmp/test-llm.js         # 端点拼接与请求体
 
 | 文档 | 内容 |
 |---|---|
+| [README.en.md](README.en.md) | English README |
 | [PRD.md](PRD.md) | 完整需求、功能细节、工具规范、数据模型、接口附录 |
 | [CHANGELOG.md](CHANGELOG.md) | 按天的版本变更与关键描述 |
+| [AGENTS.md](AGENTS.md) | 给 AI 编码助手的仓库约定与工作流 |
 
 > 约定：任何新增需求或修改，需同步更新 **README（关键）**、**PRD（细节）**、**CHANGELOG（按天）**。
 

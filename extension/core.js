@@ -455,7 +455,9 @@
 		}
 
 		var width = Number(opts.width) || 720;
-		var height = Number(opts.height) || 640;
+		/* height:'auto' lets short dialogs size to their content (no scrollbar) */
+		var autoHeight = opts.height === 'auto';
+		var height = autoHeight ? 0 : (Number(opts.height) || 640);
 		var modal = opts.modal !== false;
 		var dismissible = opts.dismissible !== false;
 		var z = (EAI._dlgZ = (EAI._dlgZ || 2147483000) + 2);
@@ -471,7 +473,7 @@
 		var cardCss = [
 			'pointer-events:auto', 'position:relative',
 			'width:' + width + 'px', 'max-width:100%',
-			'height:' + height + 'px', 'max-height:92vh',
+			'height:' + (autoHeight ? 'auto' : height + 'px'), 'max-height:92vh',
 			'background:#ffffff', 'border-radius:8px',
 			'box-shadow:0 24px 70px rgba(9,20,38,.38)',
 			'display:flex', 'flex-direction:column', 'overflow:hidden',
