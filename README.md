@@ -1,11 +1,11 @@
-# AI 助手 · EasyEDA 标准版扩展
+# AI 助手 · 嘉立创EDA标准版扩展
 
 [English](README.en.md) · 项目地址：<https://github.com/easyeda2021/ext-easyeda-std-ai-assistant>
 
-把大模型接进 **EasyEDA 标准版**（嘉立创EDA 标准版）的原理图与 PCB 编辑器：
+把大模型接进 **嘉立创EDA标准版** 的原理图与 PCB 编辑器：
 原理图审查、BOM 分析与器件标准化、PCB / 画布视觉评审、按需求生成原理图、图片生成符号。
 
-> 仅支持 **标准版（Std / v6）**；专业版（Pro）的 `.eext` 与 `eda.dmt_*` 体系不通用。
+> 仅支持 **嘉立创EDA标准版（Std / v6）**；专业版（Pro）的 `.eext` 与 `eda.dmt_*` 体系不通用。
 
 ---
 
@@ -27,8 +27,9 @@
 
 从 [Releases](https://github.com/easyeda2021/ext-easyeda-std-ai-assistant/releases)
 下载最新的 `ext-easyeda-std-ai-assistant-v<版本>.zip` 并解压。
+包内附中文 `安装说明.txt` 与英文 `INSTALL.en.txt`。
 
-1. EasyEDA → **高级 → 扩展 → 扩展配置 → 加载扩展**
+1. 嘉立创EDA → **高级 → 扩展 → 扩展配置 → 加载扩展**
 2. **一次性全选**解压出来的**全部文件**（manifest.json、locale.txt、icon.svg、所有 .js）
 3. 扩展 ID 自行填写一个英文标识（例如 `aiassistant`），记住它
 

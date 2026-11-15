@@ -158,14 +158,14 @@ function writeZip(entries, outPath) {
 function installNotes(version) {
 	const bar = '='.repeat(46);
 	return [
-		'AI 助手 · EasyEDA 标准版扩展',
+		'AI 助手 · 嘉立创EDA标准版扩展',
 		bar,
 		'',
 		'版本：v' + version,
 		'',
 		'安装步骤',
 		'--------',
-		'1. 打开 EasyEDA 标准版 → 高级 → 扩展 → 扩展配置',
+		'1. 打开嘉立创EDA → 高级 → 扩展 → 扩展配置',
 		'2. 点击「加载扩展 / Load extension」',
 		'3. 一次性全选本目录下的所有文件（manifest.json / locale.txt / icon*.* / *.js）',
 		'4. 扩展 ID 自行填写一个英文标识（例如 aiassistant），记下来即可',
@@ -177,6 +177,34 @@ function installNotes(version) {
 		'· 文件必须全选，且不能放在子目录里（加载器按文件名匹配 manifest 的 scripts）',
 		'· 扩展 ID 安装后不要改：命令名与本地配置都以它为键',
 		'· 如果按钮/菜单出现但点不动，打开 设置 → 诊断 复制信息排查'
+	].join('\r\n');
+}
+
+function installNotesEn(version) {
+	const bar = '='.repeat(52);
+	return [
+		'AI Assistant · EasyEDA Std extension',
+		bar,
+		'',
+		'Version: v' + version,
+		'',
+		'Install',
+		'-------',
+		'1. EasyEDA Std -> Advanced -> Extension -> Extension configuration',
+		'2. Click "Load extension"',
+		'3. Select ALL files in this folder at once (manifest.json / locale.txt / icon*.* / *.js)',
+		'4. Enter any English identifier as the extension ID (e.g. aiassistant) and remember it',
+		'5. Confirm, reload the editor; an "AI Assistant" button appears in the toolbar',
+		'6. Advanced -> AI Assistant -> Settings... to fill in endpoint / API key / model',
+		'',
+		'Notes',
+		'-----',
+		'- Every file must be selected, and none may sit in a sub-folder',
+		'  (the loader matches manifest scripts by file name).',
+		'- Do not change the extension ID after installing: command names and the',
+		'  local configuration are keyed by it.',
+		'- If the button or menu appears but does nothing, open Settings -> Diagnostics',
+		'  and copy the report.'
 	].join('\r\n');
 }
 
@@ -206,7 +234,9 @@ function main() {
 
 	const files = fs.readdirSync(SRC).filter((f) => fs.statSync(path.join(SRC, f)).isFile());
 	files.forEach((f) => fs.copyFileSync(path.join(SRC, f), path.join(out, f)));
+	/* install notes: Chinese first, English copy next to it */
 	fs.writeFileSync(path.join(out, '安装说明.txt'), installNotes(to), 'utf8');
+	fs.writeFileSync(path.join(out, 'INSTALL.en.txt'), installNotesEn(to), 'utf8');
 
 	let zipPath = null;
 	if (!noZip) {
@@ -217,8 +247,9 @@ function main() {
 		writeZip(entries, zipPath);
 	}
 
+	const total = fs.readdirSync(out).length;
 	console.log('version: ' + from + ' -> ' + to);
-	console.log('  folder : dist/' + name + '/  (' + files.length + ' files)');
+	console.log('  folder : dist/' + name + '/  (' + total + ' files)');
 	if (zipPath) console.log('  zip    : dist/' + name + '.zip');
 }
 

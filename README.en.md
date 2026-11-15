@@ -1,13 +1,12 @@
-# AI Assistant · EasyEDA Standard Extension
+# AI Assistant · EasyEDA Std Extension
 
 [中文](README.md) · Repository: <https://github.com/easyeda2021/ext-easyeda-std-ai-assistant>
 
-Bring an LLM into the **EasyEDA Standard** (JLCEDA Standard) schematic and PCB
-editor: schematic review, BOM analysis and component standardisation, PCB /
-canvas visual review, schematic generation from a requirement, and symbol
-generation from an image.
+Bring an LLM into the **EasyEDA Std** schematic and PCB editor: schematic review,
+BOM analysis and component standardisation, PCB / canvas visual review, schematic
+generation from a requirement, and symbol generation from an image.
 
-> **Standard edition only** (Std / v6). The Pro edition's `.eext` and
+> **EasyEDA Std only** (v6). The Pro edition's `.eext` and
 > `eda.dmt_*` APIs are a different system and are not supported.
 
 ---
@@ -38,7 +37,7 @@ Download the latest `ext-easyeda-std-ai-assistant-v<version>.zip` from
 [Releases](https://github.com/easyeda2021/ext-easyeda-std-ai-assistant/releases)
 and unzip it.
 
-1. EasyEDA → **Advanced → Extension → Extension configuration → Load extension**
+1. EasyEDA Std → **Advanced → Extension → Extension configuration → Load extension**
 2. Select **all** unzipped files at once (`manifest.json`, `locale.txt`,
    `icon.svg`, every `.js`)
 3. Enter any English identifier as the extension ID (for example `aiassistant`)

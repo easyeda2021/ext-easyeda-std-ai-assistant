@@ -58,5 +58,5 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           body: |
-            安装：EasyEDA 标准版 → 高级 → 扩展 → 扩展配置 → 加载扩展，
+            安装：嘉立创EDA → 高级 → 扩展 → 扩展配置 → 加载扩展，
             解压后全选全部文件，扩展 ID 自行填写（例如 `aiassistant`）。
