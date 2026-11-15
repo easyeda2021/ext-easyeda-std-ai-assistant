@@ -625,22 +625,57 @@
 			}
 		} catch (e) { /* ignore */ }
 
+		/* the sheet frame is itself a schlib block; its own geometry is the
+		   only reliable source (head.x/y is often 0 while the drawing spans
+		   positive and negative coordinates) */
+		var frame = null;
 		if (json.schlib) {
 			for (var gid in json.schlib) {
 				if (!Object.prototype.hasOwnProperty.call(json.schlib, gid)) continue;
-				var head = json.schlib[gid] && json.schlib[gid].head;
+				var blk = json.schlib[gid];
+				var head = blk && blk.head;
 				if (!head) continue;
-				var id = String(head.gId || '');
-				var para = String(head.c_para || '');
-				if (/^frame/i.test(id) || /frame_lib/i.test(para)) {
-					var fx = Number(head.x) || 0;
-					var fy = Number(head.y) || 0;
-					if (fx > 100) w = fx;
-					if (fy > 100) h = fy;
-					break;
+				if (/^frame/i.test(String(head.gId || '')) ||
+					/frame_lib/i.test(String(head.c_para || ''))) { frame = blk; break; }
+			}
+		}
+
+		if (frame) {
+			var xs = [], ys = [];
+			function acc(x, y) {
+				x = Number(x); y = Number(y);
+				if (isFinite(x) && isFinite(y)) { xs.push(x); ys.push(y); }
+			}
+			Object.keys(frame.polyline || {}).forEach(function (id) {
+				var p = frame.polyline[id];
+				(p.pointArr || []).forEach(function (pt) { acc(pt.x, pt.y); });
+			});
+			Object.keys(frame.polygon || {}).forEach(function (id) {
+				var p = frame.polygon[id];
+				(p.pointArr || []).forEach(function (pt) { acc(pt.x, pt.y); });
+			});
+			Object.keys(frame.rect || {}).forEach(function (id) {
+				var r = frame.rect[id];
+				var x = Number(r.x), y = Number(r.y);
+				var rw = Number(r.width), rh = Number(r.height);
+				acc(x, y);
+				if (isFinite(rw) && isFinite(rh)) { acc(x + rw, y + rh); }
+			});
+
+			if (xs.length >= 4) {
+				var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+				var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+				if (maxX - minX > 100 && maxY - minY > 100) {
+					var pad = 10;
+					return {
+						minX: minX + pad, minY: minY + pad,
+						maxX: maxX - pad, maxY: maxY - pad,
+						width: maxX - minX, height: maxY - minY
+					};
 				}
 			}
 		}
+
 		var m = 20;
 		return {
 			minX: m, minY: m,
