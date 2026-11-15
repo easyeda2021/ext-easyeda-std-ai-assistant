@@ -581,6 +581,15 @@
 				width: rect.width + 'px', height: rect.height + 'px'
 			});
 
+			/*
+			 * A non-modal dialog's mask is pointer-events:none, so the mouse
+			 * would leave our document and enter the editor iframe while
+			 * dragging — mouseup never comes back and the drag sticks.
+			 * Swallow pointer events for the whole viewport until release.
+			 */
+			var maskEvents = root[0].style.pointerEvents;
+			root[0].style.pointerEvents = 'auto';
+
 			var startX = e.clientX, startY = e.clientY;
 			var startL = rect.left, startT = rect.top;
 			var startW = rect.width, startH = rect.height;
@@ -620,6 +629,7 @@
 				window.removeEventListener('mousemove', onMove, true);
 				window.removeEventListener('mouseup', onUp, true);
 				card[0].__eaiDragEnd = null;
+				root[0].style.pointerEvents = maskEvents;
 				if (mode !== 'move') {
 					try {
 						if (opts.onResize) opts.onResize(card[0].offsetWidth, card[0].offsetHeight);

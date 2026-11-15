@@ -280,39 +280,83 @@
 		});
 	}
 
-	/** GET <base>/models — OpenAI-compatible and Anthropic gateways. */
+	/**
+	 * Model discovery: GET <base>/models.
+	 *
+	 * Anthropic exposes GET /v1/models (paginated with has_more / last_id);
+	 * OpenAI-compatible servers expose GET /v1/models too.  Gateways sometimes
+	 * only implement the chat path, so a 404 is reported as "not supported"
+	 * rather than as a hard error.
+	 */
 	L.listModels = function (cfg) {
-		var url = L.endpoint(cfg).replace(/\/(chat\/completions|messages)$/i, '/models');
+		var provider = cfg.provider === 'anthropic' ? 'anthropic' : 'openai';
 		var headers = {};
-		if (cfg.provider === 'anthropic') {
+		if (provider === 'anthropic') {
 			headers['x-api-key'] = cfg.apiKey;
 			headers['anthropic-version'] = headers['anthropic-version'] || '2023-06-01';
 		} else {
 			headers['Authorization'] = 'Bearer ' + cfg.apiKey;
 		}
 
-		return fetch(url, { method: 'GET', headers: headers }).then(function (r) {
-			return r.text().then(function (t) {
-				if (!r.ok) {
-					var msg = 'HTTP ' + r.status + ' ' + r.statusText;
-					try {
-						var j = JSON.parse(t);
-						if (j.error) msg += ' — ' + (j.error.message || j.error.type || '');
-					} catch (e) { msg += ' — ' + t.slice(0, 200); }
-					throw new Error(msg);
-				}
-				var obj;
-				try { obj = JSON.parse(t); }
-				catch (e) { throw new Error('invalid JSON: ' + t.slice(0, 200)); }
-				var arr = obj.data || obj.models || [];
-				var out = [];
-				arr.forEach(function (it) {
-					var id = it && (it.id || it.name || it.model);
-					if (id) out.push(String(id));
+		var ep = L.endpoint(cfg);
+		var primary = ep.replace(/\/(chat\/completions|messages)$/i, '/models');
+		var urls = [primary];
+		try {
+			var alt = new URL(primary).origin + '/v1/models';
+			if (alt !== primary) urls.push(alt);
+		} catch (e) { /* ignore */ }
+
+		function getOnce(url) {
+			return fetch(url, { method: 'GET', headers: headers }).then(function (r) {
+				return r.text().then(function (t) {
+					if (!r.ok) {
+						var msg = 'HTTP ' + r.status + ' ' + r.statusText;
+						try {
+							var j = JSON.parse(t);
+							if (j.error) msg += ' — ' + (j.error.message || j.error.type || '');
+						} catch (e) { msg += ' — ' + t.slice(0, 200); }
+						var err = new Error(msg);
+						err.status = r.status;
+						throw err;
+					}
+					try { return JSON.parse(t); }
+					catch (e) { throw new Error('invalid JSON: ' + t.slice(0, 200)); }
 				});
-				return out;
 			});
-		}).catch(function (e) {
+		}
+
+		function collect(url, acc, page) {
+			return getOnce(url).then(function (obj) {
+				(obj.data || obj.models || []).forEach(function (it) {
+					var id = it && (it.id || it.name || it.model);
+					if (id) acc.push(String(id));
+				});
+				if (obj.has_more && obj.last_id && page < 10) {
+					var next = url + (url.indexOf('?') >= 0 ? '&' : '?') +
+						'after_id=' + encodeURIComponent(obj.last_id) + '&limit=1000';
+					return collect(next, acc, page + 1);
+				}
+				return acc;
+			});
+		}
+
+		function tryAt(i, lastErr) {
+			if (i >= urls.length) {
+				if (lastErr && lastErr.status === 404) {
+					var e = new Error(lastErr.message +
+						'（该接口不支持模型列表，请手动填写模型名）');
+					e.status = 404;
+					throw e;
+				}
+				throw lastErr || new Error('no endpoint');
+			}
+			return collect(urls[i], [], 0).catch(function (err) {
+				if (err && err.status === 404) return tryAt(i + 1, err);
+				throw err;
+			});
+		}
+
+		return tryAt(0, null).catch(function (e) {
 			if (e && e instanceof TypeError) {
 				var e2 = new Error('Network/CORS: ' + e.message);
 				e2.isCors = true;
@@ -321,6 +365,7 @@
 			throw e;
 		});
 	};
+
 
 	/**
 	 * Sends a chat request.

@@ -119,7 +119,7 @@
 			 * edge, so they never steal a row from the text area.
 			 */
 			'<div id="eai-inputbox" style="' + st({
-				position: 'relative', height: (UI._composeH || 112) + 'px', boxSizing: 'border-box',
+				position: 'relative', height: (UI._composeH || 100) + 'px', boxSizing: 'border-box',
 				border: '1px solid ' + C.borderStrong, borderRadius: '12px',
 				background: '#fff'
 			}) + '">' +
@@ -339,7 +339,7 @@
 				$(document)
 					.on('mousemove.eairesize', function (ev) {
 						if (!dragging) return;
-						var h = Math.min(320, Math.max(84, startH - (ev.clientY - startY)));
+						var h = Math.max(84, startH - (ev.clientY - startY));
 
 						/* never grow past the space the chat can give up, otherwise
 						   the composer would be pushed out of the card */
@@ -379,8 +379,6 @@
 			}
 			UI.send();
 		});
-		$('#eai-input', $d).on('input', function () { UI.autoGrow(); });
-
 		$('#eai-input', $d).on('keydown', function (e) {
 			if (e.keyCode === 13 && (e.ctrlKey || e.metaKey)) { e.preventDefault(); UI.send(); }
 		});
@@ -471,7 +469,6 @@
 		var ta = $('#eai-input', UI.dlgPanel);
 		if (!ta.length) return;
 		ta.val(p.prompt || '');
-		UI.autoGrow();
 		ta.focus();
 		try {
 			var el = ta[0];
@@ -647,30 +644,9 @@
 
 	/* ------------------------------------------------------------- send -- */
 
-	UI.autoGrow = function () {
-		if (!UI.dlgPanel) return;
-		var $ = EAI.jq;
-		var ta = $('#eai-input', UI.dlgPanel);
-		var box = $('#eai-inputbox', UI.dlgPanel);
-		if (!ta.length || !box.length) return;
-
-		var el = ta[0];
-		var lineH = 18.75;                       /* 12.5px × 1.5 line-height */
-		var maxText = Math.round(lineH * 6) + 4; /* 6 lines */
-
-		/* measure the wrapped content, then let the textarea fill the box
-		   again — pinning its height left dead space under the text */
-		el.style.height = 'auto';
-		var textH = Math.min(Math.max(el.scrollHeight, lineH), maxText);
-		el.style.height = '';
-
-		var boxH = textH + 40;                   /* + bottom overlay area */
-		boxH = Math.min(Math.max(boxH, 84), 158);
-		if (UI._composeFloor && UI._composeFloor > boxH) boxH = UI._composeFloor;
-
-		UI._composeH = boxH;
-		box.css('height', boxH + 'px');
-	};
+	/* The input height is driven ONLY by the divider (no auto-grow):
+	   the textarea fills the box and scrolls internally. */
+	UI.autoGrow = function () { /* kept for compatibility */ };
 
 	/** Model switcher next to the send button. */
 	UI.renderModelPicker = function () {
@@ -745,7 +721,6 @@
 		});
 
 		ta.val('');
-		UI.autoGrow();
 		pendingImages.length = 0;
 		UI.renderChips();
 
