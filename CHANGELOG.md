@@ -18,6 +18,12 @@
   第 16 章给出与官方 API 文档的对照，
   文件格式链接官方仓库；补齐官方 API 全量清单（getSource/applySource、批量操作、
   选择、坐标换算等）并注明 `createToolbarButton` 在 V6 不再显示
+- **API 清单按 V6 客户端实测核对**：48 个可用；补充客户端额外 API
+  （`cacheHistory`/`flushHistory`、`createEditor`、`deleteShapes`、`deleteAllNet`、
+  `selectAll`、`unitConvert`、`wireToLine`、`exportDSN`、`importSession`、
+  `saveDataURLAsFile`、`doCommand`、`requestAction`）与「API 可用性如何自查」；
+  注明 `insertShape` / `edit.unitConvert` 在 V6 未注册
+- **Release 工作流**：发布 release 时自动构建并挂包，也支持把 zip 补传到已有 tag
 - **安装包内附英文安装说明**：`安装说明.txt`（中文）与 `INSTALL.en.txt`（English）并列，
   随解压目录一起打进 zip
 - **开源配套**：新增英文 `README.en.md`（与中文 README 互相跳转）、`AGENTS.md`

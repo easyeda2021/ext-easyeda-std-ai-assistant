@@ -1,8 +1,12 @@
 name: Release
 
-# Manual only: Actions → Release → Run workflow.
-# Builds the extension, zips it as ext-easyeda-std-ai-assistant-v<version>.zip
-# and publishes a GitHub release with that zip attached.
+# Two entry points:
+#   1) Actions → Release → Run workflow
+#        - version 留空：manifest 末位 +1
+#        - tag 留空：新建 v<version> Release 并附图
+#        - tag 填写：把 zip 补传到该 tag 已有的 Release（修复手建的空 Release 用）
+#   2) 在 GitHub 上手动 Publish release
+#        - 自动在 tag 上构建，并把 zip 上传到这条 Release
 on:
   workflow_dispatch:
     inputs:
@@ -10,20 +14,28 @@ on:
         description: '版本号（例如 0.1.0）。留空则按 manifest 末位 +1'
         required: false
         default: ''
+      tag:
+        description: '把产物上传到已有 Release 的 tag（例如 0.0.37）。留空则新建 Release'
+        required: false
+        default: ''
       prerelease:
-        description: '标记为预发布'
+        description: '新建时标记为预发布'
         required: false
         type: boolean
         default: false
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || '' }}
 
       - uses: actions/setup-node@v4
         with:
@@ -33,10 +45,25 @@ jobs:
         run: |
           for f in extension/*.js tools/*.js; do node --check "$f"; done
 
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            V="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            V="${{ inputs.version }}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            V="${{ inputs.tag }}"
+          else
+            V=""
+          fi
+          V="${V#v}"
+          echo "value=$V" >> "$GITHUB_OUTPUT"
+
       - name: Build
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            node tools/pack.js --version "${{ inputs.version }}"
+          if [ -n "${{ steps.ver.outputs.value }}" ]; then
+            node tools/pack.js --version "${{ steps.ver.outputs.value }}"
           else
             node tools/pack.js
           fi
@@ -48,8 +75,18 @@ jobs:
           VER=$(node -p "require('./extension/manifest.json').version")
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "artifact $(basename "$ZIP") (v$VER)"
 
-      - name: Publish release
+      # --- 手动触发且指定了 tag：把包补传到已有 Release ---------------------
+      - name: Upload to existing release (manual, tag given)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.tag }}" "${{ steps.meta.outputs.zip }}" --clobber
+
+      # --- 手动触发且没给 tag：新建 Release ---------------------------------
+      - name: Create release (manual)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag == '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.meta.outputs.version }}
@@ -60,3 +97,10 @@ jobs:
           body: |
             安装：嘉立创EDA → 高级 → 扩展 → 扩展配置 → 加载扩展，
             解压后全选全部文件，扩展 ID 自行填写（例如 `aiassistant`）。
+
+      # --- 发布 release 事件：补传产物 ---------------------------------------
+      - name: Upload to published release
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.meta.outputs.zip }}" --clobber

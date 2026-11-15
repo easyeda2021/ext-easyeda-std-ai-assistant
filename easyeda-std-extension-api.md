@@ -439,7 +439,8 @@ api('getSvgArcPathByCRA', { cx: 0, cy: 0, rx: 90, ry: 90, startAngle: 0.1, endAn
 
 - 支持的单位：px / mil / mm / inch；不写单位时按画布单位处理。
 - 不涉及用户单位时，直接 `画布值 × 10 = mil` 即可，省掉换算调用。
-- 旧脚本里还能看到 `api('edit.unitConvert', { type: 'mil2pixel', value: 10 })`，等价换算。
+- 当前版本的单位换算是 `api('unitConvert', { unitOld:'mil', unitNew:'pixel', value:10 })`
+  或 `{type:'mil2pixel', value:10}`；旧脚本里的 `edit.unitConvert` 在 V6 已不再注册。
 
 ## 5. 文档数据模型
 
@@ -905,7 +906,8 @@ var lang = (Locale && Locale._curr) || 'en';   // 未知时按英文处理
 | `setOriginXY` | `{x, y}` | – | 把真实原点映射到画布坐标 |
 | `coordConvert` | `{type:'real2canvas'\|'canvas2real', x, y}` | number | 坐标换算，支持 `400mil` / `10mm` 写法 |
 | `valConvert` | `{type:'real2canvas'\|'canvas2real', val}` | number | 尺寸换算 |
-| `edit.unitConvert` | `{type:'mil2pixel'\|…, value}` | number | 旧式单位换算 |
+| `unitConvert` | `{unitOld, unitNew, value}` 或 `{type:'mil2pixel', value}` | number | 单位换算（当前版本） |
+| `edit.unitConvert` | `{type:'mil2pixel'\|…, value}` | number | 旧版单位换算（V6 未注册） |
 | `getSvgArcPathByCRA` | `{cx,cy,rx,ry,startAngle,endAngle,sweepFlag}` | string | 圆弧参数转 SVG path |
 
 ### 14.6 界面与扩展环境
@@ -921,6 +923,52 @@ var lang = (Locale && Locale._curr) || 'en';   // 未知时按英文处理
 | `getRes` | `name` | 读扩展目录内文件内容 |
 | `editorCall` | `{cmd, args}` | 帧内编辑器命令（扩展环境） |
 | `window.callByEditor` | `{func, args, uuid}` | 顶层命令总线（扩展环境） |
+
+---
+
+### 14.7 客户端额外 API（本版本实测存在，官方文档未列）
+
+下面这些在 V6 客户端的运行时注册表里存在，官方 API List 没有写：
+
+| API | 参数 | 说明 |
+|---|---|---|
+| `cacheHistory` / `flushHistory` | `{frame}` | 撤销历史分组：两步之间的操作合并为一次撤销 |
+| `createEditor` | `docType` | 新建对应类型的编辑器（1/2/3/4） |
+| `deleteShapes` | `ids` | 删除图元（内部走 `delete` 命令） |
+| `deleteAllNet` | – | 删除 PCB 上的全部网络 |
+| `selectAll` | – | 全选 |
+| `unitConvert` | `{unitOld, unitNew, value}` 或 `{type:'mil2pixel', value}` | 单位换算（**当前版本名**；旧版写作 `edit.unitConvert`） |
+| `wireToLine` | `ids` | 把导线转成直线段 |
+| `exportDSN` | `args` | 导出 SPICE / DSN 网表 |
+| `importSession` | `(session, …)` | 导入会话数据 |
+| `saveDataURLAsFile` | `{dataStr, fileName}` | 把 dataURL 存为文件（会触发下载） |
+| `doCommand` | `(cmd, extId?)` | 执行编辑器命令；`cmd` 不带前缀且给了 `extId` 时自动补 `extension-<id>-` |
+| `requestAction` | – | 占位接口，当前版本直接 reject（**不可用**） |
+
+### 14.8 API 可用性如何自查
+
+不同客户端版本会增删 API。写扩展时按下面的方式自查，不要假设一定存在：
+
+```js
+function hasApi(name) {
+	try {
+		var probe = {};
+		var hit = false;
+		Object.defineProperty(probe, name, {
+			enumerable: true,
+			get: function () { hit = true; return function () {}; }
+		});
+		/* extendApi 只补充缺失项：名字已存在时不会读取 getter */
+		window.easyeda.extension.extendApi(probe);
+		return !hit;
+	} catch (e) { return false; }
+}
+
+if (!hasApi('unitConvert') && hasApi('edit.unitConvert')) { /* 走旧版换算 */ }
+```
+
+> 注意：`api('unknown')` 对不存在的名字只是返回 `undefined`，不会报错，
+> 所以不能靠「有没有抛错」判断 API 是否存在。
 
 ---
 
@@ -1090,6 +1138,11 @@ F~partId~x~y~rotation~gId~transform~locked ^^ x~y ^^ text~color~x~y~rotation~tex
 **覆盖情况**：官方 API List 中的函数在本文第 14 章已全部列出；
 本文在官方"示例式"说明之外，补充了扩展工程化必需的部分——扩展 ID 与命令前缀、
 配置持久化、自绘弹窗与拖动/缩放、CORS 与流式请求、国际化、常见坑与发布流程。
+
+**本指南的 API 清单如何核对**：附录 A 的 48 个可用 API 是在 V6 客户端运行时
+逐个验证过的（14.8 节有自查代码）；官方文档里出现的 `insertShape`、
+`edit.unitConvert` 在当前版本**未注册**，`callByEditor` 是 `window` 上的函数
+而不是 `api()` 的 key。其余「客户端额外 API」见 14.7。
 
 **需要注意的差异**
 
