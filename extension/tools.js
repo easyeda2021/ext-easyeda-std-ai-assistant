@@ -516,13 +516,15 @@
 				'To place several at once use place_devices. Coordinates are schematic ' +
 				'units (1 unit = 10 mil); out-of-frame points are clamped into the sheet.',
 			parameters: P.obj({
-				part: P.str('R | C | L | D | LED | SW | Q_NPN | Q_PNP | M_NMOS | M_PMOS | XTAL | CONN2 | GENERIC'),
+				part: P.str('Built-in part key, e.g. R / C / L / D / LED / Q_NPN / M_NMOS / SW / CONN2'),
 				x: P.num('X position in schematic units'),
 				y: P.num('Y position'),
 				rotation: P.num('Rotation in degrees, 0/90/180/270'),
-				value: P.str('Value text, e.g. 10k'),
-				designator: P.str('Optional designator, e.g. R1'),
-				package: P.str('Optional package, e.g. 0603'),
+				value: P.str('Value shown next to the symbol, e.g. 10k / 100nF'),
+				name: P.str('Part number or name (required for GENERIC / XTAL)'),
+				pre: P.str('Designator prefix letter, e.g. U (the ? is added automatically)'),
+				designator: P.str('Optional explicit designator (usually leave empty: the editor numbers it)'),
+				package: P.str('Optional package override, e.g. 0603'),
 				pinCount: P.num('Pin count, only for GENERIC')
 			}, ['part', 'x', 'y']),
 			run: function (args) {
@@ -670,7 +672,9 @@
 						y: P.num('Optional y; omit for auto layout'),
 						rotation: P.num('0 / 90 / 180 / 270'),
 						value: P.str('Value text, e.g. 10k / 100nF'),
-						designator: P.str('Designator, e.g. R1'),
+						name: P.str('Part number or name (required for GENERIC / XTAL)'),
+						pre: P.str('Designator prefix letter, e.g. U'),
+						designator: P.str('Designator, e.g. R1 (usually omit: the editor numbers it)'),
 						package: P.str('Package override'),
 						pinCount: P.num('Pin count, only for GENERIC')
 					})
@@ -707,6 +711,7 @@
 						r = A.placePart({
 							part: item.part || 'R', x: x, y: y,
 							rotation: item.rotation, value: item.value,
+							name: item.name, pre: item.pre,
 							designator: item.designator, package: item.package,
 							pinCount: item.pinCount
 						});

@@ -188,9 +188,10 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 
 1. **先一次性问清**：电源电压/电源轨、关键 IC 型号、封装、接口与连接器脚位等，
    全部通过 `ask_user` 一次提出并等待回答；**不允许**用普通文本提问后就停下
-2. **常用器件用内置模板**（不查库，模板在 `extension/parts.js`，即 `EAI.parts`）：
-   R / C / L / D / LED / SW / Q_NPN / Q_PNP / M_NMOS / M_PMOS / XTAL / CONN2，
-   放置时给 `designator` 与 `value`
+2. **常用器件用内置模板**（不查库）：模板在 `extension/parts.js`，每个模板是一行
+   **原始 LIB 源码**（目前 18 种：R/C/C_TAN/L/D/LED/Q_NPN/Q_PNP/M_NMOS/M_PMOS/
+   SW/CONN2-4/HDR2X2/2X3/XTAL/XTAL4）；放置时才解码并修改坐标、位号、值、封装。
+   位号写 `pre + ?`，由编辑器自动编号
 3. **其余器件批量检索**：`search_library` 接受 `queries[]`，一次调用查多个型号
 4. **批量放置**：`place_devices` 一次调用放完；库器件给 `uuid` + `docType`，
    内置器件给 `part`；不传 x/y 时按图框自动排版

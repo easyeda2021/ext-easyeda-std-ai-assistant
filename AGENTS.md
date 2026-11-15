@@ -25,7 +25,7 @@ extension/i18n.js        渲染期把中文文案替换成英文（字典 + 正�
 extension/llm.js         OpenAI / Anthropic 客户端：endpoint 归一化、listModels、chat、chatTools
 extension/eda.js         文档模型：元件、BOM、PCB、截图、定位
 extension/eda-netlist.js 连通性引擎 + 编辑器网络名校核
-extension/parts.js       常用器件模板（R/C/L/D/Q/MOS/晶振/连接器），place_part 取用
+extension/parts.js       常用器件原始 LIB 模板（18 种，一行一个），place_part 解码后放置
 extension/actions.js     写回文档：改值、改属性、画线、放标签、建符号
 extension/tools.js       暴露给模型的工具（JSON Schema + 实现），按文档类型裁剪
 extension/agent.js       Agent 循环 + 快捷胶囊定义（只含一句需求 prompt）

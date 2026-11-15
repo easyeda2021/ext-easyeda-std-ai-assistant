@@ -215,7 +215,7 @@
 
 	/* ----------------------------------------------------------- symbols -- */
 
-	var DEFAULT_FONT = 'Times New Roman';
+	var DEFAULT_FONT = 'Arial';
 
 	/*
 	 * A pin of a schematic symbol.
@@ -243,6 +243,27 @@
 			('M ' + bx + ' ' + by + ' ' +
 				(dy ? 'v ' + dy : 'h ' + dx));
 
+		/* pin name sits inside the body, the number just outside the pin line */
+		var nameX, nameY, nameAnchor = 'start', nameRot = 0;
+		var numX, numY, numAnchor = 'start';
+		if (dx) {
+			var toRight = dx > 0;
+			nameX = bx + (toRight ? -4 : 4);
+			nameAnchor = toRight ? 'end' : 'start';
+			nameY = by + 1;
+			numX = bx + (toRight ? 2 : -2);
+			numAnchor = toRight ? 'start' : 'end';
+			numY = by - 3;
+		} else {
+			var down = dy > 0;
+			nameX = bx + 4;
+			nameY = by + (down ? -4 : 4);
+			nameRot = 270;
+			numX = bx - 3;
+			numY = by + (down ? 2 : -2);
+			numAnchor = 'end';
+		}
+
 		return {
 			gId: id,
 			locked: false,
@@ -258,26 +279,26 @@
 				locked: false
 			},
 			name: {
-				x: (pin.nameX === undefined ? pin.x - 5 : pin.nameX) + ox,
-				y: (pin.nameY === undefined ? pin.y - 5 : pin.nameY) + oy,
+				x: (pin.nameX === undefined ? nameX : pin.nameX + ox),
+				y: (pin.nameY === undefined ? nameY : pin.nameY + oy),
 				text: pin.name || '',
 				visible: pin.showName !== false && !!pin.name,
-				rotation: 0,
-				textAnchor: 'start',
-				fontFamily: DEFAULT_FONT,
-				fontSize: '9pt',
-				fillColor: '#000000'
+				rotation: nameRot,
+				textAnchor: nameAnchor,
+				fontFamily: '',
+				fontSize: '',
+				fillColor: '#0000FF'
 			},
 			num: {
-				x: (pin.numX === undefined ? pin.x - 5 : pin.numX) + ox,
-				y: (pin.numY === undefined ? pin.y + 8 : pin.numY) + oy,
+				x: (pin.numX === undefined ? numX : pin.numX + ox),
+				y: (pin.numY === undefined ? numY : pin.numY + oy),
 				text: pin.number === undefined ? '' : String(pin.number),
 				visible: pin.showNumber !== false,
 				rotation: 0,
-				textAnchor: 'start',
-				fontFamily: DEFAULT_FONT,
-				fontSize: '9pt',
-				fillColor: '#000000'
+				textAnchor: numAnchor,
+				fontFamily: '',
+				fontSize: '',
+				fillColor: '#0000FF'
 			},
 			pinDot: { x: dotX, y: dotY },
 			path: {
@@ -392,15 +413,19 @@
 		}
 
 		var gid = newId('gge');
-		var originX = spec.x || 0;
-		var originY = spec.y || 0;
+		/* keep the symbol inside the sheet frame */
+		var pos = A.clampToSheet(spec.x || 0, spec.y || 0);
+		var originX = pos.x;
+		var originY = pos.y;
 		var kind = EAI.eda.docKind();
+		/* "U?" from the model is normalised: createSymbol adds the '?' back */
+		var pre = String(spec.pre || 'U').replace(/\?+$/, '') || 'U';
 
 		/* ---- library attributes (c_para) -------------------------------- */
 		var para = {
 			name: spec.name || '',
 			package: spec.package || '',
-			pre: spec.pre || 'U'
+			pre: pre
 		};
 		if (spec.value) para.value = spec.value;
 		if (spec.manufacturerPart) para['Manufacturer Part'] = spec.manufacturerPart;
@@ -460,7 +485,7 @@
 		});
 
 		/* ---- designator + name annotations ------------------------------ */
-		var preText = spec.designator || ((spec.pre || 'U') + '?');
+		var preText = spec.designator || (pre + '?');
 		var preAnn = {
 			mark: 'P', string: preText,
 			x: spec.preX === undefined ? br.x - originX + 4 : spec.preX,
@@ -468,7 +493,7 @@
 			visible: spec.showPre !== false
 		};
 		var nameAnn = {
-			mark: 'N', string: spec.name || '',
+			mark: 'N', string: spec.value || spec.name || '',
 			x: spec.nameX === undefined ? br.x - originX + 4 : spec.nameX,
 			y: spec.nameY === undefined ? br.y - originY + br.height + 12 : spec.nameY,
 			visible: spec.showName !== false && !!spec.name
@@ -479,12 +504,6 @@
 		var aid2 = newId('gge');
 		block.annotation[aid2] = buildAnnotation(aid2, nameAnn, originX, originY);
 		order.push(aid2);
-
-		(spec.texts || []).forEach(function (t) {
-			var tid = newId('gge');
-			block.annotation[tid] = buildAnnotation(tid, t, originX, originY);
-			order.push(tid);
-		});
 
 		block.itemOrder = order;
 
@@ -539,39 +558,58 @@
 	/* 常用器件模板集中放在 parts.js（EAI.parts）；这里只保留引用。 */
 	A.PART_LIBRARY = (EAI.parts && EAI.parts.LIBRARY) || {};
 
+	/* 参数化兜底：只有系统库模板里没有的器件才走这里（例如晶振、通用 IC）。 */
+	A.PARAM_LIB = {
+		XTAL: {
+			name: 'XTAL', pre: 'Y', package: 'HC-49S',
+			pins: [
+				{ number: '1', name: '', x: -15, y: 0, dx: -10, dotX: -25, dotY: 0, electric: 'passive' },
+				{ number: '2', name: '', x: 15, y: 0, dx: 10, dotX: 25, dotY: 0, electric: 'passive' }
+			],
+			texts: []
+		},
+		GENERIC: { name: 'U', pre: 'U', package: '', pins: [], texts: [] }
+	};
+
 	/** Generates a rectangular n pin symbol. */
 	A.genericSymbol = function (pinCount, opts) {
 		opts = opts || {};
-		var n = Math.max(1, Math.min(pinCount || 2, 24));
-		var pins = [], half = Math.ceil(n / 2);
-		var bodyW = opts.bodyWidth || 40;
-		var bodyH = (n + 1) * 10;
-		var i, side, idx;
+		var n = Math.max(2, Math.min(pinCount || 2, 48));
+		var names = Array.isArray(opts.pinNames) ? opts.pinNames : [];
+		var maxLen = 4;
+		names.forEach(function (t) { maxLen = Math.max(maxLen, String(t || '').length); });
+
+		/* body wide enough for the longest pin name, pins every 10 units */
+		var bodyW = opts.bodyWidth || Math.max(40, Math.min(150, maxLen * 7 + 24));
+		var bodyH = (Math.ceil(n / 2) + 1) * 10;
+		var pins = [], half = Math.ceil(n / 2), i, side, idx, y;
 
 		for (i = 0; i < n; i++) {
 			side = i < half ? 0 : 1;
 			idx = side === 0 ? i : i - half;
-			var count = side === 0 ? half : n - half;
-			var y = bodyH / 2 - (idx + 1) * 10 + 5;
+			y = bodyH / 2 - (idx + 1) * 10;
 			pins.push({
 				number: String(i + 1),
-				name: '',
+				name: names[i] || '',
 				x: side === 0 ? -bodyW / 2 : bodyW / 2,
 				y: y,
 				dotX: side === 0 ? -bodyW / 2 - 10 : bodyW / 2 + 10,
 				dotY: y,
 				dx: side === 0 ? -10 : 10,
-				rotation: side === 0 ? 0 : 180,
 				electric: 'passive'
 			});
 		}
 		return {
-			name: opts.name || 'U', pre: opts.pre || 'U', package: opts.package || '',
-			pins: pins,
-			texts: [{ x: -bodyW / 2 + 4, y: -8, string: opts.name || 'U', mark: 'L' }]
+			name: opts.name || 'U', pre: opts.pre || 'U',
+			package: opts.package || '',
+			pins: pins, texts: []
 		};
 	};
 
+	/**
+	 * Places a part of the built-in library.
+	 * @param {Object} spec {part:'R', x, y, rotation, value, designator}
+	 */
 	/**
 	 * Drawing area of the current sheet, in schematic units.
 	 * The sheet frame itself is a schlib block (gId starts with "frame"), so
@@ -629,8 +667,7 @@
 				shapeType: 'schlib',
 				uuid: uuid,
 				docType: String(spec.docType || '2'),
-				x: pos.x,
-				y: pos.y,
+				x: pos.x, y: pos.y,
 				rotation: Number(spec.rotation) || 0
 			});
 		} catch (e) {
@@ -639,37 +676,51 @@
 		return { ok: true, x: pos.x, y: pos.y, clamped: pos.clamped };
 	};
 
-	/**
-	 * Places a part of the built-in library.
-	 * @param {Object} spec {part:'R', x, y, rotation, value, designator}
-	 */
 	A.placePart = function (spec) {
-		var lib = (EAI.parts && EAI.parts.get) ? EAI.parts.get(spec.part)
-			: A.PART_LIBRARY[(spec.part || '').toUpperCase()];
-		if (!lib) return { ok: false, error: 'unknown part "' + spec.part + '"' };
+		var pos = A.clampToSheet(spec.x, spec.y);
 
+		/* 1) real library symbols (parts.js) — no parametric modelling */
+		var tpl = (EAI.parts && EAI.parts.get) ? EAI.parts.get(spec.part) : null;
+		if (tpl && tpl.raw) {
+			var block = EAI.parts.build(tpl, {
+				x: pos.x, y: pos.y, rotation: spec.rotation || 0,
+				designator: spec.designator, name: spec.name, value: spec.value,
+				package: spec.package, pre: spec.pre
+			});
+			if (!block) return { ok: false, error: 'template build failed' };
+			try {
+				EAI.api('createShape', {
+					shapeType: 'schlib', jsonCache: block,
+					x: pos.x, y: pos.y, rotation: spec.rotation || 0
+				});
+			} catch (e) {
+				return { ok: false, error: 'importing the symbol failed: ' + e };
+			}
+			return {
+				ok: true, gId: block.head.gId, x: pos.x, y: pos.y,
+				part: spec.part, clamped: pos.clamped,
+				designator: spec.designator || ''
+			};
+		}
+
+		/* 2) fallback: parametric symbol (GENERIC / XTAL / unknown names) */
+		var lib = A.PARAM_LIB[(spec.part || '').toUpperCase()];
+		if (!lib) return { ok: false, error: 'unknown part "' + spec.part + '"' };
 		var sym = U.clone(lib);
 		if (!sym.pins.length && spec.pinCount) {
-			sym = A.genericSymbol(spec.pinCount, { name: sym.name, pre: sym.pre });
+			sym = A.genericSymbol(spec.pinCount, { name: spec.name, pre: spec.pre });
 		}
-		var pos = A.clampToSheet(spec.x, spec.y);
 		sym.x = pos.x;
 		sym.y = pos.y;
 		sym.rotation = spec.rotation || 0;
 		sym.package = spec.package || sym.package;
-		if (spec.value) {
-			sym.texts = (sym.texts || []).concat([
-				{ x: -12, y: 12, string: spec.value, mark: 'L' }
-			]);
-		}
+		if (spec.name) sym.name = spec.name;
+		if (spec.value) sym.value = spec.value;
 
 		var res = A.createSymbol(sym);
 		if (!res.ok) return res;
 
-		/* rename / value the freshly placed part */
-		if (spec.designator) {
-			A.setComponentDesignator(res.gId, spec.designator);
-		}
+		if (spec.designator) A.setComponentDesignator(res.gId, spec.designator);
 		return {
 			ok: true, gId: res.gId, x: sym.x, y: sym.y, part: spec.part,
 			clamped: pos.clamped, designator: spec.designator || ''

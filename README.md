@@ -66,7 +66,7 @@ extension/              扩展本体
   llm.js                OpenAI + Anthropic 客户端（对话 / 视觉 / 工具调用）
   eda.js                文档模型：元件、BOM、PCB、截图、定位
   eda-netlist.js        连通性引擎（导线/引脚/网络标签 + 编辑器网络名校核）
-  parts.js              常用器件模板（R/C/L/D/Q/MOS/晶振/连接器），放置不查库
+  parts.js              常用器件原始 LIB 模板（18 种），放置不查库、就地改位号/值/封装
   actions.js            写回文档：改值、改属性、画线、放标签、建符号
   tools.js              给模型的工具（JSON Schema + 实现）
   agent.js              Agent 循环 + 快捷胶囊
