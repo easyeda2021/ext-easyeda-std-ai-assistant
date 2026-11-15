@@ -118,6 +118,10 @@ GitHub Actions → **Release → Run workflow**，可选填版本号；留空则
 
 > 约定：任何新增需求或修改，需同步更新 **README（关键）**、**PRD（细节）**、**CHANGELOG（按天）**。
 
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。
+
 ## 已知限制
 
 - 网表跨图纸连接依赖网络标签；极端 bus / 无 junction 交叠可能与编辑器略有出入

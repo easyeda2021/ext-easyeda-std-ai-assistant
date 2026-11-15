@@ -125,6 +125,10 @@ ID (commands never fire), endpoint blocked by CORS, model without function calli
 | [CHANGELOG.md](CHANGELOG.md) | per-day changes and highlights |
 | [AGENTS.md](AGENTS.md) | repository conventions for AI coding agents |
 
+## License
+
+Released under the [Apache License 2.0](LICENSE).
+
 ## Known limitations
 
 - Cross-sheet connectivity relies on net labels; unusual bus / overlapping shapes
