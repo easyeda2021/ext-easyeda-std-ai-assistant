@@ -45,7 +45,7 @@
 		'AI 助手': 'AI Assistant',
 		'AI 设置': 'AI Settings',
 		'关于 AI 助手': 'About AI Assistant',
-		'EasyEDA 智能设计助手': 'EasyEDA AI Design Assistant',
+		'嘉立创EDA标准版 · 智能设计助手': 'EasyEDA Std · AI Design Assistant',
 		'正在读取文档…': 'Reading document…',
 		'未打开文档': 'no document',
 		'未配置': 'not configured',
@@ -160,7 +160,7 @@
 		'自定义 Claude 兼容接口': 'Custom Claude-compatible API',
 
 		/* ---- about ---- */
-		'EasyEDA 标准版 · 智能原理图与 PCB 设计助手':
+		'嘉立创EDA标准版 · 智能原理图与 PCB 设计助手':
 			'EasyEDA Standard · AI schematic & PCB design assistant',
 		'BOM 与截图评审': 'BOM & snapshot review',
 		'先查系统库，查不到再现场建符号': 'Library first; build the symbol only if missing',

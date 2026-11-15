@@ -120,6 +120,7 @@ ID (commands never fire), endpoint blocked by CORS, model without function calli
 | Document | Contents |
 |---|---|
 | [README.md](README.md) | Chinese README |
+| [easyeda-std-extension-api.md](easyeda-std-extension-api.md) | extension development guide (Chinese): API, document model, UI, networking, config, pitfalls |
 | [PRD.md](PRD.md) | full requirements, tool specs, data model, API appendix |
 | [CHANGELOG.md](CHANGELOG.md) | per-day changes and highlights |
 | [AGENTS.md](AGENTS.md) | repository conventions for AI coding agents |

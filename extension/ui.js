@@ -51,7 +51,7 @@
 			'  <div style="' + st({
 				fontSize: '13px', fontWeight: '600', letterSpacing: '.3px',
 				whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-			}) + '">EasyEDA 智能设计助手</div>' +
+			}) + '">嘉立创EDA标准版 · 智能设计助手</div>' +
 			'  <div id="eai-sub" style="' + st({
 				fontSize: '11px', opacity: '.78', marginTop: '2px',
 				whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'

@@ -111,6 +111,7 @@ GitHub Actions → **Release → Run workflow**，可选填版本号；留空则
 | 文档 | 内容 |
 |---|---|
 | [README.en.md](README.en.md) | English README |
+| [easyeda-std-extension-api.md](easyeda-std-extension-api.md) | 标准版扩展开发指南：API、文档模型、UI、网络、配置、坑与建议 |
 | [PRD.md](PRD.md) | 完整需求、功能细节、工具规范、数据模型、接口附录 |
 | [CHANGELOG.md](CHANGELOG.md) | 按天的版本变更与关键描述 |
 | [AGENTS.md](AGENTS.md) | 给 AI 编码助手的仓库约定与工作流 |

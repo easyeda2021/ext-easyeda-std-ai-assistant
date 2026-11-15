@@ -54,7 +54,7 @@
 			'<div>' +
 			'<div style="' + st({ fontSize: '20px', fontWeight: '600', letterSpacing: '.5px' }) + '">AI 助手</div>' +
 			'<div style="' + st({ fontSize: '12px', opacity: '.85', marginTop: '2px' }) +
-			'">EasyEDA 标准版 · 智能原理图与 PCB 设计助手</div>' +
+			'">嘉立创EDA标准版 · 智能原理图与 PCB 设计助手</div>' +
 			'<div style="' + st({
 				display: 'inline-block', marginTop: '7px', fontSize: '11px',
 				background: 'rgba(255,255,255,.16)', padding: '2px 10px', borderRadius: '20px'
