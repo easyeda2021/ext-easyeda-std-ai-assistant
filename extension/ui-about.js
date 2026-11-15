@@ -38,7 +38,7 @@
 		}
 
 		var html = styleBlock() + '<div class="eai-root" style="' + st({
-			fontFamily: FONT, fontSize: '13px', color: C.text, background: C.bg
+			fontFamily: FONT, fontSize: '12px', color: C.text, background: C.bg
 		}) + '">' +
 
 			'<div style="' + st({

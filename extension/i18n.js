@@ -58,6 +58,7 @@
 		'已请求停止。': 'Stop requested.',
 		'已停止。': 'Stopped.',
 		'（图片）': '(image)',
+		'工具调用过程 · 点击展开或收起': 'Tool calls · click to expand',
 		'图片': 'Image',
 		'剪贴板图片': 'clipboard image',
 		'还没有配置模型。请先在「设置」里填写接口地址、API Key 和模型名。':
@@ -179,6 +180,8 @@
 	I.rules = [
 		[/^你好！当前文档：(.*)$/, 'Hello! Current document: $1'],
 		[/^已附加图片：(.*)$/, 'Image attached: $1'],
+		[/^正在调用工具 · 第 (\d+) 次 · (.*)$/, 'Working · call #$1 · $2'],
+		[/^本轮工具调用 (\d+) 次：(.*)$/, '$1 tool call(s) this turn: $2'],
 		[/^已截取画布 (\d+)x(\d+) 并发送给模型。$/, 'Captured $1×$2 and sent to the model.'],
 		[/^已定位 (.*)$/, 'Located $1'],
 		[/^未找到 (.*)$/, 'Not located: $1'],

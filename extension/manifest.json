@@ -1,13 +1,14 @@
 {
 	"name": "AI 助手",
 	"description": "AI 原理图审查 / PCB 审查 / BOM 分析 / 截图评审 / 自动生成原理图（EasyEDA 标准版）",
-	"version": "0.0.25",
+	"version": "0.0.33",
 	"icons": {
 		"default": "icon.svg"
 	},
 	"locale": "locale.txt",
 	"scripts": [
 		"core.js",
+		"prompts.js",
 		"i18n.js",
 		"llm.js",
 		"eda.js",

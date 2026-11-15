@@ -59,6 +59,22 @@
 		return base + '/chat/completions';
 	};
 
+	/**
+	 * Model-list endpoint.  Always derived from the base URL the user entered,
+	 * with the same normalisation as the chat endpoint but ending in /models —
+	 * no hard-coded provider host is ever substituted.
+	 */
+	L.modelsEndpoint = function (cfg) {
+		var provider = cfg.provider === 'anthropic' ? 'anthropic' : 'openai';
+		var base = trimSlash(cfg.baseUrl) || L.defaultBase(provider);
+
+		if (/\/models$/i.test(base)) return base;
+		base = base.replace(/\/(chat\/completions|messages)$/i, '');
+		if (/\/v1$/i.test(base)) return base + '/models';
+		if (!pathOf(base)) return base + '/v1/models';
+		return base + '/models';
+	};
+
 	function parseExtraHeaders(cfg) {
 		var out = {};
 		var raw = String(cfg.extraHeaders || '').trim();
@@ -76,12 +92,42 @@
 
 	/* ------------------------------------------------------ message shaping */
 
+	/*
+	 * Content is normally an array of parts, but tool results and hand-built
+	 * messages may carry a plain string.  Everything that walks the message
+	 * list must tolerate both — a string has no .map().
+	 */
+	function partsOf(m) {
+		var c = m && m.content;
+		if (typeof c === 'string') return c ? [{ type: 'text', text: c }] : [];
+		if (!c || Object.prototype.toString.call(c) !== '[object Array]') {
+			return c == null ? [] : [{ type: 'text', text: String(c) }];
+		}
+		return c.map(function (p) {
+			return typeof p === 'string' ? { type: 'text', text: p } : (p || { type: 'text', text: '' });
+		});
+	}
+
+	function plainText(m) {
+		var c = m && m.content;
+		if (typeof c === 'string') return c;
+		return partsOf(m).map(function (p) {
+			return p.type === 'text' ? (p.text || '') : '';
+		}).join('');
+	}
+
+	/** a tool turn rendered as prose, for request bodies that carry no tools */
+	function toolLine(m) {
+		var body = plainText(m);
+		return '[tool ' + (m.name || '') + ']\n' + body;
+	}
+
 	function splitSystem(messages) {
 		var sys = [], rest = [], i, m, txt;
 		for (i = 0; i < (messages || []).length; i++) {
 			m = messages[i];
 			if (m.role === 'system') {
-				txt = (m.content || []).map(function (p) {
+				txt = partsOf(m).map(function (p) {
 					return p.type === 'text' ? (p.text || '') : '';
 				}).join('\n');
 				sys.push(txt);
@@ -96,7 +142,16 @@
 		var s = splitSystem(messages), out = [];
 		if (s.system) out.push({ role: 'system', content: s.system });
 		s.messages.forEach(function (m) {
-			var parts = (m.content || []).map(function (p) {
+			/*
+			 * A role:'tool' message is only valid right after an assistant
+			 * message with tool_calls; this path sends no tools, so fold the
+			 * result into plain user text instead of leaking a broken turn.
+			 */
+			if (m.role === 'tool') {
+				out.push({ role: 'user', content: toolLine(m) });
+				return;
+			}
+			var parts = partsOf(m).map(function (p) {
 				if (p.type === 'image') {
 					return {
 						type: 'image_url',
@@ -124,8 +179,22 @@
 
 	function toAnthropic(messages) {
 		var s = splitSystem(messages), out = [];
+
+		function push(role, parts) {
+			if (!parts.length) return;
+			/* Anthropic wants alternating roles — merge consecutive ones */
+			var last = out[out.length - 1];
+			if (last && last.role === role) last.content = last.content.concat(parts);
+			else out.push({ role: role, content: parts });
+		}
+
 		s.messages.forEach(function (m) {
-			var parts = (m.content || []).map(function (p) {
+			/* no tools in this request: replay tool output as prose */
+			if (m.role === 'tool') {
+				push('user', [{ type: 'text', text: toolLine(m) }]);
+				return;
+			}
+			var parts = partsOf(m).map(function (p) {
 				if (p.type === 'image') {
 					return {
 						type: 'image',
@@ -138,11 +207,7 @@
 				}
 				return { type: 'text', text: p.text || '' };
 			});
-			if (!parts.length) return;
-			out.push({
-				role: m.role === 'assistant' ? 'assistant' : 'user',
-				content: parts
-			});
+			push(m.role === 'assistant' ? 'assistant' : 'user', parts);
 		});
 		return out;
 	}
@@ -281,12 +346,13 @@
 	}
 
 	/**
-	 * Model discovery: GET <base>/models.
+	 * Model discovery: GET <base>/models, where <base> is the URL the user
+	 * configured (see L.modelsEndpoint).
 	 *
-	 * Anthropic exposes GET /v1/models (paginated with has_more / last_id);
-	 * OpenAI-compatible servers expose GET /v1/models too.  Gateways sometimes
-	 * only implement the chat path, so a 404 is reported as "not supported"
-	 * rather than as a hard error.
+	 * Anthropic and OpenAI-compatible servers both expose GET /v1/models
+	 * (Anthropic paginates with has_more / last_id).  Gateways sometimes only
+	 * implement the chat path, so a 404 is reported as "not supported" rather
+	 * than as a hard error.
 	 */
 	L.listModels = function (cfg) {
 		var provider = cfg.provider === 'anthropic' ? 'anthropic' : 'openai';
@@ -298,13 +364,7 @@
 			headers['Authorization'] = 'Bearer ' + cfg.apiKey;
 		}
 
-		var ep = L.endpoint(cfg);
-		var primary = ep.replace(/\/(chat\/completions|messages)$/i, '/models');
-		var urls = [primary];
-		try {
-			var alt = new URL(primary).origin + '/v1/models';
-			if (alt !== primary) urls.push(alt);
-		} catch (e) { /* ignore */ }
+		var urls = [L.modelsEndpoint(cfg)];
 
 		function getOnce(url) {
 			return fetch(url, { method: 'GET', headers: headers }).then(function (r) {
@@ -512,7 +572,7 @@
 				return;
 			}
 
-			var parts = (m.content || []).map(function (p) {
+			var parts = partsOf(m).map(function (p) {
 				if (p.type === 'image') {
 					return {
 						type: 'image_url',
@@ -565,7 +625,7 @@
 				return;
 			}
 
-			var parts = (m.content || []).map(function (p) {
+			var parts = partsOf(m).map(function (p) {
 				if (p.type === 'image') {
 					return {
 						type: 'image',

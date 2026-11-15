@@ -138,7 +138,7 @@
 
 		if (!UI.dlgReport) {
 			var html = styleBlock() + '<div class="eai-root" style="' + st({
-				fontFamily: FONT, fontSize: '13px', color: C.text, background: C.bg,
+				fontFamily: FONT, fontSize: '12px', color: C.text, background: C.bg,
 				boxSizing: 'border-box', width: '100%'
 			}) + '">' +
 				'<div id="eai-report-body" style="' + st({
@@ -180,9 +180,9 @@
 				'<body style="font-family:\'Microsoft YaHei\',sans-serif;max-width:1040px;' +
 				'margin:0 auto;padding:32px;line-height:1.7;color:#1f2733">' +
 				UI.mdToHtml(md) + '</body>';
-			U.download('ai-report-' + Date.now() + '.html', html, 'text/html;charset=utf-8');
+			EAI.download('ai-report-' + Date.now() + '.html', html, 'text/html;charset=utf-8');
 		} else {
-			U.download('ai-report-' + Date.now() + '.md', md);
+			EAI.download('ai-report-' + Date.now() + '.md', md);
 		}
 	};
 
@@ -206,7 +206,7 @@
 		}
 
 		var html = styleBlock() + '<div class="eai-root" style="' + st({
-			fontFamily: FONT, fontSize: '13px', color: '#c3d3e6', background: '#101926'
+			fontFamily: FONT, fontSize: '12px', color: '#c3d3e6', background: '#101926'
 		}) + '">' +
 			'<div id="eai-log" style="' + st({
 				height: '440px', overflowY: 'auto', background: '#101926', color: '#c3d3e6',

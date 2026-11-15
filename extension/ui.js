@@ -23,6 +23,8 @@
 	var lastReport = '';       /* markdown of the last answer */
 	var pendingImages = [];    /* images attached by the user */
 	var busy = false;          /* an agent run is in flight */
+	var traceState = null;     /* tool-call card of the running turn */
+	var presetSystem = '';     /* task rules attached by the last pill click */
 
 	/* shared helpers live in ui-base.js */
 	var isAlive = UI.isAlive;
@@ -66,7 +68,7 @@
 
 	function panelHtml() {
 		return styleBlock() + '<div class="eai-root" style="' + st({
-			fontFamily: FONT, fontSize: '13px', color: C.text, lineHeight: '1.6',
+			fontFamily: FONT, fontSize: '12px', color: C.text, lineHeight: '1.6',
 			background: C.bg, margin: '0', padding: '0',
 			height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden'
 		}) + '">' +
@@ -417,6 +419,8 @@
 		pendingImages.length = 0;
 		UI._presetReport = false;
 		UI._previewMd = '';
+		presetSystem = '';
+		UI.traceReset();
 		$('#eai-chat', UI.dlgPanel).empty();
 		UI.renderChips();
 		var ta = $('#eai-input', UI.dlgPanel);
@@ -465,6 +469,9 @@
 	UI.usePreset = function (p) {
 		if (!UI.dlgPanel) return;
 		UI._presetReport = !!p.report;
+		/* the procedure travels in the system prompt; the input gets only the
+		   short request so the user sees (and edits) just what they want */
+		presetSystem = (EAI.prompts.tasks && EAI.prompts.tasks[p.id]) || '';
 		var $ = EAI.jq;
 		var ta = $('#eai-input', UI.dlgPanel);
 		if (!ta.length) return;
@@ -611,36 +618,156 @@
 		return bubble;
 	};
 
-	UI.appendTool = function (name, args) {
+	/* ------------------------------------------------------- tool trace -- */
+
+	/*
+	 * Tool calls are process information, not conversation.  One card per run
+	 * is created on the first call, updated in place while the agent works
+	 * (a single line: "正在调用工具 · 4 次 · search_library") and collapsed to
+	 * a one-line summary when the run finishes — no chat bubble per call.
+	 */
+
+	function traceNames(state) {
+		var counts = {}, order = [];
+		state.items.forEach(function (it) {
+			if (counts[it.name] === undefined) { counts[it.name] = 0; order.push(it.name); }
+			counts[it.name]++;
+		});
+		return order.map(function (n) {
+			return n + (counts[n] > 1 ? ' ×' + counts[n] : '');
+		}).join('、');
+	}
+
+	function renderTraceHead(state, running) {
+		var n = state.items.length;
+		var txt = running
+			? '正在调用工具 · 第 ' + n + ' 次 · ' + (state.items[n - 1] ? state.items[n - 1].name : '')
+			: '本轮工具调用 ' + n + ' 次：' + traceNames(state);
+		state.head.html(
+			'<span style="color:#8fb3ad;font-size:10px;flex:0 0 auto">' +
+			(state.open ? '▾' : '▸') + '</span>' +
+			'<span style="flex:1 1 auto;min-width:0;overflow:hidden;' +
+			'text-overflow:ellipsis;white-space:nowrap">' + U.esc(txt) + '</span>');
+	}
+
+	function ensureTrace() {
+		if (traceState && traceState.el && traceState.el.length &&
+			traceState.el[0].parentNode) return traceState;
 		if (!UI.dlgPanel) return null;
 		var $ = EAI.jq;
 		var box = $('#eai-chat', UI.dlgPanel);
 		if (!box.length) return null;
 
-		var el = $('<div class="eai-tool">');
-		el.attr('style', st({ display: 'flex', gap: '10px', marginBottom: '9px', alignItems: 'flex-start' }));
+		var el = $('<div class="eai-msg eai-trace"></div>');
+		el.attr('style', st({
+			display: 'flex', gap: '9px', marginBottom: '11px', alignItems: 'flex-start'
+		}));
 		el.append('<div style="' + st({
 			width: '28px', height: '28px', borderRadius: '9px', background: C.green,
-			color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-			fontSize: '12px', flex: '0 0 auto'
+			color: '#ffffff', display: 'flex', alignItems: 'center',
+			justifyContent: 'center', flex: '0 0 auto', fontSize: '13px'
 		}) + '">&#9881;</div>');
 
-		var chip = $('<div class="eai-chip"></div>');
-		chip.attr('style', st({
-			fontSize: '12px', color: C.green, background: '#e8f7f4', border: '1px solid #bfe6df',
-			borderRadius: '8px', padding: '5px 11px', maxWidth: '100%',
-			overflow: 'hidden', textOverflow: 'ellipsis'
+		var body = $('<div></div>');
+		body.attr('style', st({
+			flex: '1 1 auto', minWidth: '0', display: 'flex', flexDirection: 'column'
 		}));
-		chip.append('<b>' + U.esc(name) + '</b> ');
-		var a = args === undefined ? '' : U.fmt(args, 150).replace(/\s+/g, ' ');
-		chip.append('<span style="color:#5f7a76;font-family:' + MONO + ';font-size:11px">' +
-			U.esc(a) + '</span>');
 
-		el.append(chip);
+		var head = $('<div class="eai-trace-head"></div>');
+		head.attr('title', '工具调用过程 · 点击展开或收起');
+		head.attr('style', st({
+			fontSize: '12px', color: C.green, background: '#e8f7f4',
+			border: '1px solid #bfe6df', borderRadius: '8px', padding: '5px 10px',
+			display: 'flex', alignItems: 'center', gap: '5px', lineHeight: '1.6',
+			cursor: 'pointer', userSelect: 'none'
+		}));
+
+		var list = $('<div class="eai-trace-list"></div>');
+		list.attr('style', st({
+			display: 'none', margin: '5px 0 0 1px', padding: '0 0 0 9px',
+			borderLeft: '2px solid #dcefeb'
+		}));
+
+		body.append(head);
+		body.append(list);
+		el.append(body);
 		box.append(el);
 		box[0].scrollTop = box[0].scrollHeight;
-		return chip;
+
+		var state = { el: el, head: head, list: list, items: [], open: false, done: false };
+		head.on('click', function () {
+			if (!state.items.length) return;
+			state.open = !state.open;
+			list.css('display', state.open ? 'block' : 'none');
+			renderTraceHead(state, !state.done);
+			if (state.open) box[0].scrollTop = box[0].scrollHeight;
+		});
+		traceState = state;
+		return state;
+	}
+
+	function traceLine(state, html) {
+		var $ = EAI.jq;
+		var line = $('<div class="eai-trace-item"></div>');
+		line.attr('style', st({
+			fontSize: '11px', color: '#5f7a76', lineHeight: '1.75',
+			whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+		}));
+		line.html(html);
+		state.list.append(line);
+		return line;
+	}
+
+	/** record one tool call (updated in place, never a new bubble) */
+	UI.traceTool = function (name, args) {
+		var state = ensureTrace();
+		if (!state) return null;
+		var idx = state.items.length + 1;
+		state.items.push({ name: name, args: args });
+
+		var argTxt = args === undefined ? '' : U.fmt(args, 120).replace(/\s+/g, ' ');
+		var line = traceLine(state,
+			'<span style="color:#9aa8a4">' + idx + '.</span> ' +
+			'<b style="font-family:' + MONO + '">' + U.esc(name) + '</b>' +
+			(argTxt ? ' <span style="font-family:' + MONO + '">' + U.esc(argTxt) + '</span>' : ''));
+		line.attr('title', name + (args === undefined ? '' : ' ' + U.fmt(args, 400)));
+
+		renderTraceHead(state, true);
+		var box = $('#eai-chat', UI.dlgPanel);
+		if (box.length) box[0].scrollTop = box[0].scrollHeight;
+		return line;
 	};
+
+	/** a process note (screenshot taken, …) that belongs to the same card */
+	UI.traceNote = function (text) {
+		var state = ensureTrace();
+		if (!state) { UI.appendMsg('sys', text); return; }
+		var line = traceLine(state, '');
+		line.attr('style', st({
+			fontSize: '11px', color: '#7c8a92', lineHeight: '1.75',
+			whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+		}));
+		line.text(text);
+		var box = $('#eai-chat', UI.dlgPanel);
+		if (box.length) box[0].scrollTop = box[0].scrollHeight;
+	};
+
+	/** new turn: the next tool call starts a fresh card */
+	UI.traceReset = function () { traceState = null; };
+
+	/** run finished: fold the card into a single summary line */
+	UI.traceFinish = function () {
+		var state = traceState;
+		traceState = null;
+		if (!state || !state.items.length) return;
+		state.done = true;
+		state.open = false;
+		state.list.css('display', 'none');
+		renderTraceHead(state, false);
+	};
+
+	/* back-compat */
+	UI.appendTool = UI.traceTool;
 
 	/* ------------------------------------------------------------- send -- */
 
@@ -741,32 +868,22 @@
 	UI.runAgent = function (msgs) {
 		var $ = EAI.jq;
 		UI.setBusy(true);
+		UI.traceReset();
 
 		var cfg = EAI.cfg.current();
+		/* every model-facing prompt lives in prompts.js */
+		var systemText = EAI.prompts.system({
+			docKindLabel: EAI.eda.docKindLabel(),
+			language: cfg.language
+		});
+		/* the pill's task rules travel here, never through the input box */
+		if (presetSystem) {
+			systemText += '\n\n' + EAI.prompts.taskHeading + '\n' + presetSystem;
+		}
+
 		var system = {
 			role: 'system',
-			content: [{
-				type: 'text',
-				text: [
-					'你是一位资深硬件工程师，作为插件运行在 EasyEDA（嘉立创EDA 标准版）里。',
-					'你可以通过工具直接读取和修改用户当前打开的文档。',
-					'当前文档类型：' + EAI.eda.docKindLabel() + '。',
-					'回答语言：' + (cfg.language === 'en' ? 'English' : '中文') + '。',
-					'规则：',
-					'1. 需要数据时先调用工具，不要凭空猜测电路内容；',
-					'2. 提到元件时使用准确位号（R12、C3、U1），这样用户能点它定位；',
-					'3. 修改文档前先说明你打算改什么；修改后用简短话语汇报；',
-					'4. 用 Markdown 输出，网表/BOM 用表格；评审结论按「严重 / 一般 / 建议」分级。',
-					'5. 工具调用结束后必须给出**完整**的最终结论；不要只写「接下来将…」就停止。',
-					'6. 对话里可能有多张历史图片：生成符号时只使用**当前这条消息**的图片，' +
-					'绝不要把之前会话的图片再做一遍。',
-					'7. create_symbol 一次调用就会画好矩形框、逐个引脚与 c_para 属性，' +
-					'调用后不要再截图核对或反复修正。',
-					'8. 画原理图时必须优先用系统库：先 search_library 搜型号，命中就 ' +
-					'place_device 放置；只有系统库没有时，才用 create_symbol 凭你的知识' +
-					'生成符号（给出符号名、引脚编号、引脚名称）并直接放到画布。'
-				].join('\n')
-			}]
+			content: [{ type: 'text', text: systemText }]
 		};
 
 		var aiBubble = null;
@@ -784,15 +901,23 @@
 						aiBubble.html(UI.mdToHtml(ev.text));
 						aiBubble.data('eai-raw', ev.text);
 					}
+					/* the answer always sits below the tool card it came from */
+					if (traceState && traceState.el && aiBubble) {
+						var msgEl = aiBubble.closest ? aiBubble.closest('.eai-msg') : aiBubble.parent();
+						if (msgEl && msgEl.length && traceState.el.next()[0] !== msgEl[0]) {
+							traceState.el.insertBefore(msgEl);
+						}
+					}
 					var box = $('#eai-chat', UI.dlgPanel);
 					if (box.length) box[0].scrollTop = box[0].scrollHeight;
 				} else if (ev.type === 'tool') {
-					UI.appendTool(ev.name, ev.args);
+					UI.traceTool(ev.name, ev.args);
 				} else if (ev.type === 'image') {
-					UI.appendMsg('sys', '已截取画布 ' + ev.width + 'x' + ev.height + ' 并发送给模型。');
+					UI.traceNote('已截取画布 ' + ev.width + 'x' + ev.height + ' 并发送给模型。');
 				}
 			}
 		}).then(function (r) {
+			UI.traceFinish();
 			var finalText = String(r.text || '').trim();
 			if (finalText) {
 				history.push({ role: 'assistant', content: [{ type: 'text', text: finalText }] });
@@ -810,6 +935,7 @@
 			}
 			if (r.aborted) UI.appendMsg('sys', '已停止。');
 		}).catch(function (err) {
+			UI.traceFinish();
 			var msg = err && err.message ? err.message : String(err);
 			UI.appendMsg('err', msg);
 			if (err && err.isCors) {

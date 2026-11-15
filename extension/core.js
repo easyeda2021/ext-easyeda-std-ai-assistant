@@ -472,10 +472,10 @@
 			'pointer-events:auto', 'position:relative',
 			'width:' + width + 'px', 'max-width:100%',
 			'height:' + height + 'px', 'max-height:92vh',
-			'background:#ffffff', 'border-radius:14px',
+			'background:#ffffff', 'border-radius:8px',
 			'box-shadow:0 24px 70px rgba(9,20,38,.38)',
 			'display:flex', 'flex-direction:column', 'overflow:hidden',
-			"font-family:'Microsoft YaHei','Segoe UI',Verdana,sans-serif"
+			"font-family:'Microsoft YaHei','Segoe UI',Verdana,sans-serif", 'font-size:12px'
 		].join(';');
 
 		var headCss = [

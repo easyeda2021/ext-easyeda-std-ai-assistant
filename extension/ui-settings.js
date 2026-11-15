@@ -168,7 +168,7 @@
 			field('接口地址',
 				'<input data-pf="baseUrl" data-id="' + p.id + '" value="' + U.esc(p.baseUrl || '') +
 				'" placeholder="https://api.openai.com/v1" style="' + inputCss() + '">',
-				'实际请求：<code style="' + st({
+				'实际请求：<code data-endpoint="' + p.id + '" style="' + st({
 					background: '#eef2f8', padding: '1px 5px', borderRadius: '4px',
 					fontFamily: MONO, fontSize: '10.5px', color: '#2f5fa8'
 				}) + '">' + U.esc(EAI.llm.endpoint({
@@ -390,6 +390,17 @@
 		return null;
 	}
 
+	/** live "实际请求" hint under the base-url field */
+	function refreshEndpoint(p) {
+		if (!p || !UI.dlgSettings) return;
+		var code = EAI.jq('#eai-set-body code[data-endpoint="' + p.id + '"]', UI.dlgSettings);
+		if (code.length) {
+			code.text(EAI.llm.endpoint({
+				provider: p.protocol, baseUrl: p.baseUrl, model: ''
+			}));
+		}
+	}
+
 	function addProvider(preset, wantedName) {
 		var name = wantedName || (preset ? preset.label : '新供应商');
 		var base = name, n = 2;
@@ -470,7 +481,7 @@
 		messageErr = false;
 
 		var html = UI.styleBlock() + '<div class="eai-root" style="' + st({
-			fontFamily: FONT, fontSize: '13px', color: C.text, background: C.bg,
+			fontFamily: FONT, fontSize: '12px', color: C.text, background: C.bg,
 			height: '100%', display: 'flex', flexDirection: 'column'
 		}) + '">' +
 
@@ -528,6 +539,7 @@
 			var p = findProvider($(this).attr('data-id'));
 			if (!p) return;
 			p[$(this).attr('data-pf')] = $(this).val();
+			refreshEndpoint(p);
 		});
 		$d.on('change', '[data-pf]', function () {
 			var p = findProvider($(this).attr('data-id'));
@@ -535,6 +547,7 @@
 			p[$(this).attr('data-pf')] = $(this).val();
 			var k = $(this).attr('data-pf');
 			if (k === 'name' || k === 'protocol') render();
+			else refreshEndpoint(p);
 		});
 
 		$d.on('input', '[data-pm]', function () {
@@ -655,6 +668,11 @@
 			});
 			if (!draft.active || !findProvider(draft.active.providerId)) {
 				draft.active = { providerId: p.id, modelId: (p.models[0] || {}).id || '' };
+			} else if (draft.active.providerId === p.id) {
+				/* keep the panel's active model pointing at something real */
+				var act = draft.active;
+				var hasActive = (p.models || []).some(function (mm) { return mm.id === act.modelId; });
+				if (!hasActive) act.modelId = (p.models[0] || {}).id || '';
 			}
 			fetched[p.id] = null;
 			render();
