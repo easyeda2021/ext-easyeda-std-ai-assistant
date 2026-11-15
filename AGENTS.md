@@ -101,4 +101,5 @@ node tools/pack.js --no-zip         # 只产出目录
   `CHANGELOG.md`（按天，版本号取当天最新构建）。
 - 提交信息用中文，标题一句话概括，正文按模块分点。
 - 发布：GitHub Actions → **Release → Run workflow**（版本可选），
-  工作流构建并创建 `v<version>` Release，附 `ext-easyeda-std-ai-assistant-v<version>.zip`。
+  工作流构建并创建 tag 为 `<version>`（不带 v）的 Release，附
+  `ext-easyeda-std-ai-assistant-v<version>.zip`；在 GitHub 上发布 Release 也会自动挂包。

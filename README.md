@@ -96,7 +96,9 @@ node tools/pack.js --no-zip         # 只生成解压目录
 ## 发布
 
 GitHub Actions → **Release → Run workflow**，可选填版本号；留空则按
-`manifest.json` 末位 +1。工作流会构建并创建同名 tag 的 Release，附上 zip。
+`manifest.json` 末位 +1。工作流会构建并创建 tag 为版本号（如 `0.0.37`，不带 `v`）的
+Release，附上 zip；在 GitHub 上直接发布 Release 也会自动构建挂包，已有的空 Release
+可用 `tag` 输入补传。
 
 - 版本唯一来源：`extension/manifest.json` 的 `version`（关于页与诊断显示的就是它）
 - `dist/`、`tmp/` 不入库（见 `.gitignore`）

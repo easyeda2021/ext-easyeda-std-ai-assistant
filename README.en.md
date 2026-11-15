@@ -103,8 +103,9 @@ Output lives in `dist/` (git-ignored):
 - `dist/ext-easyeda-std-ai-assistant-v<version>.zip` — release asset, files at the zip root
 
 Release: GitHub Actions → **Release → Run workflow** (version optional; empty
-bumps the patch). The workflow publishes a release tagged `v<version>` with the
-zip attached.
+bumps the patch). The workflow publishes a release tagged `<version>` (no `v`
+prefix) with the zip attached. Publishing a release on GitHub also builds and
+attaches the zip; an existing empty release can be filled with the `tag` input.
 
 - Single source of truth for the version: `extension/manifest.json`
 - `dist/` and `tmp/` are not committed
