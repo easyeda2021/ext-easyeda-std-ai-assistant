@@ -70,6 +70,9 @@
 
 	/* ------------------------------------------------------ toolbar button -- */
 
+	/* V6 turned the toolbar into a text menu and no longer shows extension
+	   buttons, so this is only for older clients — the menu above is the
+	   real entry point. */
 	try {
 		var icon = '';
 		try { icon = EAI.api('getRes', 'icon.svg') || ''; } catch (e) { /* ignore */ }

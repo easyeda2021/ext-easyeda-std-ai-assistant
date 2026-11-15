@@ -239,6 +239,12 @@ api('createToolbarButton', {
 | `cmd` | 点击执行的命令全名 |
 | `menu` | 可选：右键/下拉菜单项 |
 
+> **注意（V6）**：顶部工具栏在 V6 已从「图标菜单」改为「文字菜单」，
+> **不再提供扩展自定义按钮的展示位**。也就是说 `createToolbarButton` 在 V6 上
+> 基本不起作用——调用不报错，但工具栏里看不到你的按钮。
+> 功能入口请以 `createExtensionMenu`（「高级」菜单）为准；
+> `createToolbarButton` 仅用于兼容旧版客户端。
+
 ### 4.4 createDialog（不建议用于自绘 UI）
 
 ```js
@@ -266,23 +272,44 @@ if (!doc) { /* 未打开文档 */ }
 **坑**：没有打开的文档、或文档类型不匹配时可能返回空对象/`null`，
 所有读取都要有空值分支。
 
-### 4.6 图元读写
+### 4.6 图元读写（getShape / updateShape / createShape）
 
 ```js
-api('getShape', { uuid: 'xxx' });       // 读取单个图元
-api('updateShape', { shape: obj });     // 修改并写回
-api('createShape', {
-	shapeType: 'schlib',                // 或用库器件
-	uuid: '库器件 uuid',
-	docType: 2,
-	x: 120, y: 80
+/* 读：按 gId（官方文档里也叫 id） */
+var obj = api('getShape', { id: 'gge13' });
+
+/* 改：必须同时给 shapeType 与 gId/jsonCache */
+api('updateShape', {
+	shapeType: 'PAD',
+	jsonCache: { gId: 'gge5', net: 'GND', shape: 'ELLIPSE' }
 });
+
+/* 建：直接给字段 / 用 jsonCache / 用库器件 */
+api('createShape', { shapeType: 'arrowhead', x: 300, y: 300, color: '#339933', size: '3', rotation: 0 });
+api('createShape', { shapeType: 'schlib', shortUrl: 'nxlVIGgQO', from: 'system', title: '556_DIL14', x: 400, y: 300 });
+api('createShape', { shapeType: 'schlib', from: 'EasyEDALibs', title: 'HDR2X2', x: 400, y: 300 });
 ```
 
-- 修改图元：先 `getShape` 拿完整对象，改字段后整体 `updateShape` 写回。
-- 放置系统库器件用 `createShape({ shapeType: 'schlib', uuid, docType })`，
-  能保留封装、BOM 信息。
-- 不要只构造局部对象写回，序列化器会读取大量字段（见第 5 章）。
+**shapeType 速查（官方清单）**
+
+| 文档 | shapeType |
+|---|---|
+| 原理图 | `schlib` `rect` `polyline` `polygon` `wire` `bus` `image` `circle` `ellipse` `line` `path` `arc` `annotation` `junction` `netlabel` `busentry` `arrowhead` `noconnectflag` `pin` `netflag` |
+| PCB | `FOOTPRINT` `TRACK` `COPPERAREA` `SOLIDREGION` `RECT` `CIRCLE` `TEXT` `ARC` `DIMENSION` `PAD` `VIA` `HOLE` |
+
+要点：
+
+- `updateShape` 的 `shapeType` 与 `jsonCache.gId` 必填；只给要改的字段即可，其余保留。
+- 放置库器件可以用 `shortUrl` / `from` + `title`，也可以用库返回的 `uuid` + `docType`
+  （`createShape({ shapeType: 'schlib', uuid, docType })`）；
+  后者的好处是能保留封装、BOM 与供应商信息。
+- 复合图元（`schlib`）可以传 `head` + `itemOrder` + 各图元表，或 `children` 数组，
+  由 `createShape('pin'|'polyline'|'annotation', {...})` 逐个生成。
+- 原理图里还有一组预定义网络标签：`netLabel_VCC`、`netLabel_GnD`、`netLabel_GND`、
+  `netLabel_+5V`、`netLabel_-5V`、`netLabel_VEE`、`netLabel_Bar`、`netLabel_netPort` 等。
+- 不要只构造局部对象整体写回，序列化器会读取大量字段（见第 5 章）。
+- 旧脚本风格里还有 `api('insertShape', [{ shapeTypeName: 'path', … }])`，
+  新代码建议统一用 `createShape`。
 
 ### 4.7 配置读写
 
@@ -334,7 +361,93 @@ var name = window.callByEditor({ func: 'getWireNetName', args: [points], uuid: t
 
 ---
 
+### 4.11 文档源：读取与整体写回（getSource / applySource）
+
+```js
+var json = api('getSource', { type: 'json' });       // 可读的 JSON 对象
+var comp = api('getSource', { type: 'compress' });   // 数据库里保存的压缩串
+var svg  = api('getSource', { type: 'svg' });        // SVG 源码（截图 / 导出）
+
+api('applySource', { source: json, createNew: false });  // 改当前文档
+api('applySource', { source: comp, createNew: true });   // 新开一个编辑器
+```
+
+- 批量改属性（统一线宽、过孔孔径等）用 `getSource → 改字段 → applySource` 最省事。
+- `createNew: true` 会**新开**一个编辑器并载入内容，`false` 则替换当前文档。
+- `applySource` 是整体替换，执行前最好校验字段并提示用户（或先备份）。
+
+### 4.12 批量图元操作
+
+```js
+api('clone', { ids: ['gge2', 'gge3'] });          // 返回新 gId 数组
+api('delete', { ids: ['gge2'] });
+api('rotate', { ids: ['gge2'], degree: 90 });
+api('rotate_left', { ids: ['gge2'] });            // 逆时针
+api('rotate_right', { ids: ['gge2'] });           // 顺时针
+api('fliph', { ids: ['gge2'] });
+api('flipv', { ids: ['gge2'] });
+api('align_left', { ids: ['gge2', 'gge3'] });     // align_right / align_top / align_bottom
+api('moveObjs', { objs: [{ gId: 'gge2' }, 'gge3'], addX: 20, addY: 20 });  // 相对移动
+api('moveObjsTo', { objs: ['gge2'], x: 20, y: 20 });                       // 绝对移动
+```
+
+- `objs` 可以省略：省略时作用于当前选中对象。
+- 位移单位是**画布坐标**（见 4.14），不是 mil/mm。
+
+### 4.13 选择状态
+
+```js
+api('select', { ids: ['gge2', 'gge3'] });
+api('selectNone');
+var ids = api('getSelectedIds');   // 当前选中对象的 gId 数组
+```
+
+### 4.14 坐标系统与单位换算
+
+标准版有「画布坐标」与「真实坐标」两套：画布 **1 像素 = 10 mil**（PCB 常用单位），
+原点可以通过 API 映射。
+
+```js
+api('setOriginXY', { x: 400, y: 300 });   // 把真实原点映射到画布 (400, 300)
+
+api('coordConvert', { type: 'real2canvas', x: '10mm', y: '10mm' });
+api('coordConvert', { type: 'canvas2real', x: 400 });
+
+api('valConvert', { type: 'real2canvas', val: '20mil' });   // 尺寸换算
+api('valConvert', { type: 'canvas2real', val: 400 });
+
+api('getSvgArcPathByCRA', { cx: 0, cy: 0, rx: 90, ry: 90, startAngle: 0.1, endAngle: 0.7, sweepFlag: 1 });
+```
+
+- 支持的单位：px / mil / mm / inch；不写单位时按画布单位处理。
+- 不涉及用户单位时，直接 `画布值 × 10 = mil` 即可，省掉换算调用。
+- 旧脚本里还能看到 `api('edit.unitConvert', { type: 'mil2pixel', value: 10 })`，等价换算。
+
 ## 5. 文档数据模型
+
+> **文件格式的权威说明**：<https://github.com/easyeda/easyeda-std-file-format>
+> —— 包含通用格式、原理图/PBC 图元、各 docType 文件结构以及完整示例 JSON。
+> 本章只讲扩展开发时最常打交道的部分，字段细节请以该仓库为准。
+
+**docType 对照**
+
+| docType | 文档类型 |
+|---|---|
+| 1 | 原理图 |
+| 2 | 原理图符号（Symbol） |
+| 3 | PCB |
+| 4 | PCB 封装（Footprint） |
+| 5 | 原理图工程（多页原理图） |
+
+**文件是 JSON，但图元字段用分隔符压成字符串**（这也是处理 `c_para`、引脚、
+封装内部图元时必须按分隔符切分的原因）：
+
+| 分隔符 | 用途 |
+|---|---|
+| `~` | 分隔属性字段 |
+| `` ` `` | 分隔自定义属性键值对 |
+| `^^` | 连接复合图元段（Pin、Netflag、PAD） |
+| `#@$` | 连接器件/封装内部图元 |
 
 ### 5.1 原理图 / 符号文档
 
@@ -714,23 +827,51 @@ var lang = (Locale && Locale._curr) || 'en';   // 未知时按英文处理
 
 ## 14. 附录
 
-### 14.1 API 速查
+### 14.1 API 全量速查
 
-| API | 作用 |
-|---|---|
-| `createCommand` | 注册命令（键名必须带真实 ID 前缀） |
-| `createExtensionMenu` | 注册「高级」菜单项（建议单层 submenu） |
-| `createToolbarButton` | 工具栏按钮 |
-| `createDialog` | EasyUI 对话框（默认关闭，样式受宿主影响） |
-| `getActiveJson` | 当前文档 JSON |
-| `getActiveFileTitle` | 当前文档标题 |
-| `getActiveProjectAllSchJson` | 整工程多图纸 JSON |
-| `getSource` | 文档源码（`type:'svg'` 可截图） |
-| `getShape` / `updateShape` / `createShape` | 图元读写 |
-| `readConfig` / `saveConfig` | 扩展配置读写（按扩展 ID 分桶） |
-| `getRes` | 读取扩展目录内的资源文件 |
-| `editorCall` | 帧内编辑器命令 |
-| `window.callByEditor` | 顶层命令总线（部分能力只在这里） |
+**文档读取 / 整体写回**
+
+| API | 作用 | 详见 |
+|---|---|---|
+| `getSource({type:'json'\|'compress'\|'svg'})` | 读当前文档源 | 4.11 |
+| `applySource({source, createNew})` | 整体写回 / 新开编辑器载入 | 4.11 |
+| `getActiveJson()` / `getActiveFileTitle()` | 当前文档 JSON / 标题 | 4.5 |
+| `getActiveProjectAllSchJson()` | 整工程多图纸 | 4.5 |
+
+**图元**
+
+| API | 作用 | 详见 |
+|---|---|---|
+| `getShape({id})` | 读取单个图元 | 4.6 |
+| `updateShape({shapeType, jsonCache})` | 修改图元 | 4.6 |
+| `createShape({shapeType, …})` | 创建图元 / 放置库器件 | 4.6 |
+| `insertShape([…])` | 旧式批量创建 | 4.6 |
+| `clone({ids})` / `delete({ids})` | 复制 / 删除 | 4.12 |
+| `rotate` / `rotate_left` / `rotate_right` | 旋转 | 4.12 |
+| `fliph` / `flipv` / `align_left…bottom` | 翻转 / 对齐 | 4.12 |
+| `moveObjs` / `moveObjsTo` | 相对 / 绝对移动 | 4.12 |
+
+**选择与坐标**
+
+| API | 作用 | 详见 |
+|---|---|---|
+| `select({ids})` / `selectNone()` / `getSelectedIds()` | 选择状态 | 4.13 |
+| `setOriginXY({x,y})` | 映射真实原点 | 4.14 |
+| `coordConvert` / `valConvert` | 坐标 / 数值换算 | 4.14 |
+| `getSvgArcPathByCRA` | 圆弧转 SVG path | 4.14 |
+
+**界面与扩展**
+
+| API | 作用 | 详见 |
+|---|---|---|
+| `createCommand({…})` | 注册命令（键名带扩展 ID 前缀） | 4.1 |
+| `createExtensionMenu([…])` | 「高级」菜单 | 4.2 |
+| `createToolbarButton({…})` | 工具栏按钮（**V6 不显示**） | 4.3 |
+| `createDialog({…})` | EasyUI 对话框（默认关闭） | 4.4 |
+| `readConfig(key)` / `saveConfig(payload)` | 扩展配置读写 | 4.7 |
+| `getRes(name)` | 读取扩展内资源 | 4.8 |
+| `editorCall({cmd,args})` | 帧内编辑器命令 | 4.9 |
+| `window.callByEditor({func,args,uuid})` | 顶层命令总线 | 4.10 |
 
 ### 14.2 字段速查
 
@@ -743,6 +884,29 @@ var lang = (Locale && Locale._curr) || 'en';   // 未知时按英文处理
 | `head.gId / x / y / rotation` | 图元标识与位置 |
 | `itemOrder` | 绘制顺序 |
 | `fileType` | 文档类型（sch / pcb / schlib / pcblib） |
+
+## 15. 与官方文档的关系
+
+官方资料（建议对照阅读）：
+
+| 资源 | 内容 |
+|---|---|
+| [How to Use API](https://docs.easyeda.com/en/API/1-How-to-Use-API/) | 插件入口、加载扩展、用户脚本、入门示例 |
+| [Coordinate System and Unit](https://docs.easyeda.com/en/API/2-Coordinate-System-and-Unit/) | 画布坐标 / 真实坐标、单位换算 |
+| [API List](https://docs.easyeda.com/en/API/3-API-List/) | API 全量清单与调用示例 |
+| [API Examples](https://docs.easyeda.com/en/API/4-API-Examples/) | 示例工程代码 |
+| [Standard file format](https://github.com/easyeda/easyeda-std-file-format) | 文档 JSON 格式说明与各 docType 示例 |
+
+**覆盖情况**：官方 API List 中的函数在本文第 4 章与 14.1 节已全部列出；
+本文在官方"示例式"说明之外，补充了扩展工程化必需的部分——扩展 ID 与命令前缀、
+配置持久化、自绘弹窗与拖动/缩放、CORS 与流式请求、国际化、常见坑与发布流程。
+
+**需要注意的差异**
+
+- `createToolbarButton` 在 V6 不再展示（见 4.3），菜单入口请用 `createExtensionMenu`。
+- 官方文档以「运行一次脚本」的示例为主，扩展里还要处理文档未打开、语言、
+  配置缺失等运行期状态。
+- 个别 API 在不同客户端版本上行为略有差异，以实际返回值为准。
 
 ---
 

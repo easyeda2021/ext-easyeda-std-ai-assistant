@@ -54,7 +54,7 @@ node tools/pack.js     # → dist/ext-easyeda-std-ai-assistant-v<version>.zip
 
 ## Quick start
 
-- Open the panel from the toolbar button or **Advanced ▸ AI Assistant ▸ AI Assistant…**
+- Open the panel from **Advanced ▸ AI Assistant ▸ AI Assistant…** (older clients also get a toolbar button)
 - Open **Settings** first: choose the protocol, fill in endpoint / API key / model,
   then use *Test connection*
 - Click a pill (schematic review / BOM analysis / standardise parts / generate
