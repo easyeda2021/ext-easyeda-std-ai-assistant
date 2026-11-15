@@ -34,6 +34,58 @@
 		return D.activeJson();
 	}
 
+	/**
+	 * One system-library search (POST /api/components/search).
+	 * Resolves to a compact, model-friendly text block.
+	 */
+	function searchOne(q, limit) {
+		return fetch('/api/components/search', {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ doctype: [2], wd: q, page: 1 })
+		}).then(function (r) {
+			return r.text().then(function (t) {
+				var obj;
+				try { obj = JSON.parse(t); }
+				catch (e) { throw new Error('search returned non-JSON: ' + t.slice(0, 120)); }
+				if (!obj || obj.success === false) {
+					throw new Error((obj && (obj.message || obj.msg)) || 'search failed');
+				}
+				var res = obj.result || {};
+				var items = [];
+				if (Array.isArray(res.lists)) items = res.lists;
+				else if (res.lists && typeof res.lists === 'object') {
+					Object.keys(res.lists).forEach(function (k) {
+						if (Array.isArray(res.lists[k])) items = items.concat(res.lists[k]);
+					});
+				} else if (Array.isArray(res)) {
+					items = res;
+				}
+
+				if (!items.length) return '（无结果，用 create_symbol 现场生成）';
+
+				var lines = [];
+				items.slice(0, limit).forEach(function (it, i) {
+					var lcsc = it.lcsc && it.lcsc.number ? it.lcsc.number : '';
+					var mfr = (it.extra && (it.extra.Manufacturer || it.extra.manufacturer)) || '';
+					var pkg = it.package || it.packageName || '';
+					lines.push((i + 1) + '. ' + (it.title || '?') +
+						' | 封装 ' + (pkg || '-') +
+						' | 厂商 ' + (mfr || '-') +
+						' | LCSC ' + (lcsc || '-') +
+						' | uuid=' + (it.uuid || '-') +
+						' | docType=' + (it.docType || '2'));
+				});
+				return '共 ' + items.length + ' 个结果（显示前 ' + Math.min(limit, items.length) + ' 个）\n' +
+					lines.join('\n');
+			});
+		}).catch(function (e) {
+			return '检索失败：' + (e && e.message ? e.message : e) +
+				'（可改用 create_symbol 现场生成）';
+		});
+	}
+
 	/* ------------------------------------------------------------- schemas -- */
 
 	var P = {
@@ -458,11 +510,13 @@
 		/* ---------------------------------------------------------------- */
 		{
 			name: 'place_part',
-			description: 'Place a component on the schematic at a position. Built-in parts: ' +
-				'R, C, L, D, LED, SW, and GENERIC (use pinCount for a generic n-pin IC). ' +
-				'Coordinates are schematic units (1 unit = 10 mil).',
+			description: 'Place ONE built-in component at a position. Built-in parts: ' +
+				'R, C, L, D, LED, SW, Q_NPN, Q_PNP, M_NMOS, M_PMOS, XTAL, CONN2, ' +
+				'GENERIC (use pinCount for a generic n-pin IC). ' +
+				'To place several at once use place_devices. Coordinates are schematic ' +
+				'units (1 unit = 10 mil); out-of-frame points are clamped into the sheet.',
 			parameters: P.obj({
-				part: P.str('R | C | L | D | LED | SW | GENERIC'),
+				part: P.str('R | C | L | D | LED | SW | Q_NPN | Q_PNP | M_NMOS | M_PMOS | XTAL | CONN2 | GENERIC'),
 				x: P.num('X position in schematic units'),
 				y: P.num('Y position'),
 				rotation: P.num('Rotation in degrees, 0/90/180/270'),
@@ -523,71 +577,43 @@
 		{
 			name: 'search_library',
 			description:
-				'Search the EasyEDA (立创EDA) SYSTEM component library for a real part. ' +
-				'Call this FIRST while drawing a schematic: if a matching part exists, ' +
-				'place it with place_device (it then carries the real package, BOM data ' +
-				'and PCB footprint). Only when nothing matches should you fall back to ' +
-				'create_symbol with your own knowledge.',
+				'Search the EasyEDA system library. Pass MANY queries in one call ' +
+				'("queries": ["STM32F103C8T6", "AMS1117-3.3", ...]) — the tool runs them ' +
+				'internally, so a 30-part BOM needs one call, not thirty. ' +
+				'Never search for the built-in parts (R, C, L, D, LED, SW, Q_NPN, Q_PNP, ' +
+				'M_NMOS, M_PMOS, XTAL, CONN2) — place those with place_devices/place_part.',
 			parameters: P.obj({
-				query: P.str('Part number or keyword, e.g. "SSD1306", "AMS1117-3.3", "STM32F103C8T6"'),
-				limit: P.num('How many candidates to return (default 8, max 20).')
-			}, ['query']),
+				queries: {
+					type: 'array',
+					description: 'One entry per part number / keyword. Up to 20 per call.',
+					items: P.str('e.g. "SSD1306", "AMS1117-3.3"')
+				},
+				query: P.str('Single query (legacy; prefer queries[])'),
+				limit: P.num('Candidates per query (default 5, max 12).')
+			}),
 			run: function (args) {
-				var q = String((args && args.query) || '').trim();
-				if (q.length < 2) return 'Please give at least 2 characters to search for.';
-				var limit = Math.min(Number(args.limit) || 8, 20);
+				var qs = [];
+				if (Array.isArray(args.queries)) qs = args.queries;
+				else if (args.query) qs = [args.query];
+				qs = qs.map(function (q) { return String(q == null ? '' : q).trim(); })
+					.filter(function (q) { return q.length >= 2; })
+					.filter(function (q, i, a) { return a.indexOf(q) === i; });
+				if (!qs.length) return '请至少给一个不少于 2 个字符的查询词。';
+				if (qs.length > 20) qs = qs.slice(0, 20);
+				var limit = Math.min(Number(args.limit) || 5, 12);
 
-				return fetch('/api/components/search', {
-					method: 'POST',
-					credentials: 'include',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ doctype: [2], wd: q, page: 1 })
-				}).then(function (r) {
-					return r.text().then(function (t) {
-						var obj;
-						try { obj = JSON.parse(t); }
-						catch (e) { throw new Error('search returned non-JSON: ' + t.slice(0, 200)); }
-						if (!obj || obj.success === false) {
-							throw new Error((obj && (obj.message || obj.msg)) || 'search failed');
-						}
-						var res = obj.result || {};
-
-						/* lists is either an array or { easyeda:[…], user:[…] } */
-						var items = [];
-						if (Array.isArray(res.lists)) items = res.lists;
-						else if (res.lists && typeof res.lists === 'object') {
-							Object.keys(res.lists).forEach(function (k) {
-								if (Array.isArray(res.lists[k])) items = items.concat(res.lists[k]);
-							});
-						} else if (Array.isArray(res)) {
-							items = res;
-						}
-
-						if (!items.length) {
-							return '系统库没有找到「' + q + '」。' +
-								'请改用 create_symbol（用你自己的知识生成符号：名称 + 引脚编号 + 引脚名称）。';
-						}
-
-						var lines = ['系统库检索「' + q + '」：' + items.length + ' 个结果（显示前 ' +
-							Math.min(limit, items.length) + ' 个）'];
-						items.slice(0, limit).forEach(function (it, i) {
-							var lcsc = it.lcsc && it.lcsc.number ? it.lcsc.number : '';
-							var mfr = (it.extra && (it.extra.Manufacturer || it.extra.manufacturer)) || '';
-							var pkg = it.package || it.packageName || '';
-							lines.push((i + 1) + '. ' + (it.title || '?') +
-								' | 封装 ' + (pkg || '-') +
-								' | 厂商 ' + (mfr || '-') +
-								' | LCSC ' + (lcsc || '-') +
-								' | uuid=' + (it.uuid || '-') +
-								' | docType=' + (it.docType || '2'));
+				var out = [];
+				var chain = Promise.resolve();
+				qs.forEach(function (q) {
+					chain = chain.then(function () {
+						return searchOne(q, limit).then(function (txt) {
+							out.push('### ' + q + '\n' + txt);
 						});
-						lines.push('');
-						lines.push('若要用其中一个，调用 place_device {"uuid":"…","docType":"…","x":..,"y":..}。');
-						return lines.join('\n');
 					});
-				}).catch(function (e) {
-					return '系统库检索失败：' + (e && e.message ? e.message : e) +
-						'。可以改用 create_symbol 现场生成符号。';
+				});
+				return chain.then(function () {
+					return '系统库检索（' + qs.length + ' 个查询）：\n\n' + out.join('\n\n') +
+						'\n\n命中项请用 place_devices 批量放置（一次调用可放多个）。';
 				});
 			}
 		},
@@ -611,20 +637,135 @@
 				if (err) return err;
 				var uuid = String(args.uuid || '').trim();
 				if (!uuid) return 'uuid is required (call search_library first).';
-				try {
-					EAI.api('createShape', {
-						shapeType: 'schlib',
-						uuid: uuid,
-						docType: String(args.docType || '2'),
-						x: args.x,
-						y: args.y,
-						rotation: args.rotation || 0
-					});
-				} catch (e) {
-					return '放置失败：' + e;
-				}
-				return '已从系统库放置器件 (uuid ' + uuid + ') 到 ' + args.x + ',' + args.y +
+				var r = A.placeDevice({
+					uuid: uuid, docType: args.docType,
+					x: args.x, y: args.y, rotation: args.rotation
+				});
+				if (!r.ok) return '放置失败：' + r.error;
+				return '已从系统库放置器件 (uuid ' + uuid + ') 到 ' + r.x + ',' + r.y +
+					(r.clamped ? '（超出图框已修正）' : '') +
 					'。该器件带有真实封装与 BOM 信息，不要再用 create_symbol 重复生成。';
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
+			name: 'place_devices',
+			description:
+				'Place MANY components in ONE call — either real library parts ' +
+				'(uuid from search_library) or built-in parts (' +
+				'R, C, L, D, LED, SW, Q_NPN, Q_PNP, M_NMOS, M_PMOS, XTAL, CONN2, GENERIC). ' +
+				'Omit x/y to let the tool lay them out in a grid inside the sheet frame; ' +
+				'all placements are clamped to stay inside the frame. ' +
+				'This is the tool to use when populating a whole schematic: one call, ' +
+				'not one call per part.',
+			parameters: P.obj({
+				placements: {
+					type: 'array',
+					items: P.obj({
+						part: P.str('Built-in part name (omit when uuid is given)'),
+						uuid: P.str('Library uuid from search_library'),
+						docType: P.str('Library docType (default "2")'),
+						x: P.num('Optional x; omit for auto layout'),
+						y: P.num('Optional y; omit for auto layout'),
+						rotation: P.num('0 / 90 / 180 / 270'),
+						value: P.str('Value text, e.g. 10k / 100nF'),
+						designator: P.str('Designator, e.g. R1'),
+						package: P.str('Package override'),
+						pinCount: P.num('Pin count, only for GENERIC')
+					})
+				},
+				autoLayout: { type: 'boolean', description: 'Grid-layout the ones without x/y (default true)' }
+			}, ['placements']),
+			run: function (args) {
+				var err = need(['sch']);
+				if (err) return err;
+				var list = Array.isArray(args.placements) ? args.placements : [];
+				if (!list.length) return 'placements 为空。';
+
+				var b = A.sheetBounds();
+				var auto = args.autoLayout !== false;
+				var perRow = Math.max(1, Math.floor((b.maxX - b.minX) / 110));
+				var col = 0, row = 0, placed = 0, clamped = 0, failed = 0;
+				var lines = [];
+
+				list.slice(0, 300).forEach(function (item) {
+					var x = item.x, y = item.y;
+					if (auto && (x === undefined || y === undefined || x === null || y === null)) {
+						x = b.minX + 40 + (col % perRow) * 110;
+						y = b.minY + 40 + row * 90;
+						col++;
+						if (col % perRow === 0) row++;
+					}
+					var r;
+					if (item.uuid) {
+						r = A.placeDevice({
+							uuid: item.uuid, docType: item.docType,
+							x: x, y: y, rotation: item.rotation
+						});
+					} else {
+						r = A.placePart({
+							part: item.part || 'R', x: x, y: y,
+							rotation: item.rotation, value: item.value,
+							designator: item.designator, package: item.package,
+							pinCount: item.pinCount
+						});
+					}
+					var name = item.designator || item.part || item.uuid || '?';
+					if (r && r.ok) {
+						placed++;
+						if (r.clamped) clamped++;
+						lines.push('✓ ' + name + ' @' + r.x + ',' + r.y);
+					} else {
+						failed++;
+						lines.push('✗ ' + name + ' — ' + ((r && r.error) || 'unknown error'));
+					}
+				});
+
+				return '已放置 ' + placed + ' 个（失败 ' + failed + '，贴边修正 ' + clamped + '）\n' +
+					lines.slice(0, 200).join('\n') +
+					(list.length > 300 ? '\n（超过 300 个，已截断）' : '');
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
+			name: 'ask_user',
+			description:
+				'Ask the user one or more questions and WAIT for the answers. ' +
+				'Use this ONCE, before drawing, to collect every unknown at the same time ' +
+				'(supply rails, exact IC part numbers, package, connector pinout…). ' +
+				'Never stop the task to ask in plain text — batch all questions here, ' +
+				'then continue with the answers. Returns a JSON object of answers.',
+			parameters: P.obj({
+				questions: {
+					type: 'array',
+					items: P.obj({
+						id: P.str('Short id used as the answer key, e.g. "vcc"'),
+						text: P.str('Question text'),
+						options: {
+							type: 'array',
+							description: 'Preset answers; the user can also type a custom one',
+							items: P.obj({
+								value: P.str('Value returned to you'),
+								label: P.str('Text shown to the user')
+							}, ['value'])
+						},
+						allowCustom: { type: 'boolean', description: 'Allow free text (default true)' }
+					}, ['id', 'text'])
+				}
+			}, ['questions']),
+			run: function (args) {
+				var qs = (args.questions || []).filter(function (q) {
+					return q && q.text && q.id;
+				});
+				if (!qs.length) return '没有给出有效的问题。';
+				if (!EAI.ui || !EAI.ui.askQuestions) {
+					return '问答界面不可用，请按合理默认继续完成，并在最终说明里列出假设。';
+				}
+				return EAI.ui.askQuestions(qs).then(function (answers) {
+					return '用户回答（JSON）：' + JSON.stringify(answers);
+				});
 			}
 		},
 
@@ -694,8 +835,8 @@
 		var READ = ['get_document_info', 'capture_image', 'locate_component'];
 		var SCH = ['get_components', 'get_netlist', 'get_bom', 'set_component_value',
 			'set_component_designator', 'audit_components', 'set_component_params',
-			'search_library', 'place_device',
-			'place_part', 'create_wire', 'create_net_label', 'create_symbol'];
+			'search_library', 'place_device', 'place_devices',
+			'place_part', 'create_wire', 'create_net_label', 'create_symbol', 'ask_user'];
 		var PCB = ['get_pcb_info', 'get_components'];
 
 		var allow = READ.slice();

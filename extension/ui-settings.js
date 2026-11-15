@@ -313,9 +313,13 @@
 				'<input type="number" id="eai-timeout" step="30" min="20" value="' +
 				U.esc(String(draft.timeout)) + '" style="' + inputCss() + '">') +
 			field('最大工具步数',
-				'<input type="number" id="eai-steps" step="1" min="1" max="40" value="' +
+				'<input type="number" id="eai-steps" step="1" min="1" max="200" value="' +
 				U.esc(String(draft.maxSteps)) + '" style="' + inputCss() + '">',
-				'一次对话里最多允许模型调用多少次工具') +
+				'一次对话最多请求模型多少次（每步一次请求，含工具回合）') +
+			field('最大工具调用次数',
+				'<input type="number" id="eai-maxcalls" step="10" min="10" max="500" value="' +
+				U.esc(String(draft.maxToolCalls || 80)) + '" style="' + inputCss() + '">',
+				'累计工具调用上限，超过后强制收尾；批量工具（place_devices 等）更省额度') +
 			field('回答语言',
 				'<select id="eai-lang" style="' + inputCss() + '">' +
 				'<option value="zh"' + (draft.language !== 'en' ? ' selected' : '') + '>中文</option>' +
@@ -689,7 +693,8 @@
 		$d.on('change', '#eai-temp', function () { draft.temperature = Number($(this).val() || 0); });
 		$d.on('change', '#eai-maxtok', function () { draft.maxTokens = Number($(this).val() || 8192); });
 		$d.on('change', '#eai-timeout', function () { draft.timeout = Number($(this).val() || 300); });
-		$d.on('change', '#eai-steps', function () { draft.maxSteps = Number($(this).val() || 12); });
+		$d.on('change', '#eai-steps', function () { draft.maxSteps = Number($(this).val() || 40); });
+		$d.on('change', '#eai-maxcalls', function () { draft.maxToolCalls = Number($(this).val() || 80); });
 		$d.on('change', '#eai-lang', function () { draft.language = $(this).val(); });
 		$d.on('input', '#eai-headers', function () { draft.extraHeaders = $(this).val(); });
 

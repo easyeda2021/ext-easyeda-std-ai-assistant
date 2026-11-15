@@ -46,7 +46,8 @@
 		var cfg = EAI.cfg.current();
 		var messages = (opts.messages || []).slice();
 		var onEvent = opts.onEvent;
-		var maxSteps = Number(opts.maxSteps || cfg.maxSteps || 12);
+		var maxSteps = Number(opts.maxSteps || cfg.maxSteps || 40);
+		var maxCalls = Number(opts.maxCalls || cfg.maxToolCalls || 80);
 		var steps = 0;
 		var toolsDisabled = false;
 		var nudged = false;      /* asked once for a final answer without tools */
@@ -150,7 +151,7 @@
 					 * Models love to drill into one net after another.  After a
 					 * dozen tool calls stop the exploration and force a report.
 					 */
-					if (toolCallsTotal >= 12 && !toolsDisabled && !toolsNudged) {
+					if (toolCallsTotal >= maxCalls && !toolsDisabled && !toolsNudged) {
 						toolsNudged = true;
 						toolsDisabled = true;
 						messages.push({
@@ -160,7 +161,7 @@
 								text: EAI.prompts.nudges.converge
 							}]
 						});
-						emit(onEvent, { type: 'note', text: '工具调用较多，改为强制输出结论' });
+						emit(onEvent, { type: 'note', text: '工具调用已达上限（' + maxCalls + '），改为强制输出结论' });
 					}
 
 					/* a tool may have produced a picture — attach it for the next turn */

@@ -268,7 +268,8 @@
 		temperature: 0.2,
 		maxTokens: 8192,
 		timeout: 300,
-		maxSteps: 12,
+		maxSteps: 40,
+		maxToolCalls: 80,
 		extraHeaders: '',
 		active: { providerId: '', modelId: '' },
 		providers: []
@@ -281,7 +282,8 @@
 			temperature: 0.2,
 			maxTokens: 8192,
 			timeout: 300,
-			maxSteps: 12,
+			maxSteps: 40,
+			maxToolCalls: 80,
 			extraHeaders: '',
 			providers: [],
 			active: { providerId: '', modelId: '' }
@@ -308,11 +310,21 @@
 			temperature: c.temperature != null ? c.temperature : 0.2,
 			maxTokens: c.maxTokens || 8192,
 			timeout: c.timeout || 300,
-			maxSteps: c.maxSteps || 12,
+			maxSteps: c.maxSteps || 40,
+			maxToolCalls: c.maxToolCalls || 80,
 			extraHeaders: c.extraHeaders || '',
 			providers: hasData ? [p] : [],
 			active: { providerId: hasData ? p.id : '', modelId: p.models[0] ? p.models[0].id : '' }
 		};
+	}
+
+	/* One-time, in-memory fix-ups for configs saved by older builds. */
+	function normalizeConfig(c) {
+		if (!c) return c;
+		/* 12 was the old default step cap; it starved whole-schematic generation */
+		if (Number(c.maxSteps) === 12) c.maxSteps = 40;
+		if (!Number(c.maxToolCalls)) c.maxToolCalls = 80;
+		return c;
 	}
 
 	EAI.cfg = {
@@ -333,7 +345,7 @@
 				} catch (e) { /* ignore */ }
 			}
 
-			var out = migrateConfig(c) || defaultConfig();
+			var out = normalizeConfig(migrateConfig(c) || defaultConfig());
 			EAI._cfg = out;
 			return out;
 		},
@@ -370,7 +382,8 @@
 				temperature: raw.temperature,
 				maxTokens: raw.maxTokens,
 				timeout: raw.timeout,
-				maxSteps: raw.maxSteps,
+				maxSteps: Number(raw.maxSteps) || 40,
+				maxToolCalls: Number(raw.maxToolCalls) || 80,
 				extraHeaders: raw.extraHeaders || ''
 			};
 		},

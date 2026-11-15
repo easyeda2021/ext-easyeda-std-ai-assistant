@@ -375,6 +375,7 @@
 
 		$('#eai-send', $d).on('click', function () {
 			if (busy) {
+				UI.cancelQuestions();
 				EAI.agent.stop();
 				UI.appendMsg('sys', '正在停止…（等待当前请求返回）');
 				return;
@@ -420,6 +421,7 @@
 		UI._presetReport = false;
 		UI._previewMd = '';
 		presetSystem = '';
+		UI.cancelQuestions();
 		UI.traceReset();
 		$('#eai-chat', UI.dlgPanel).empty();
 		UI.renderChips();
@@ -768,6 +770,232 @@
 
 	/* back-compat */
 	UI.appendTool = UI.traceTool;
+
+	/* --------------------------------------------------- question sheet -- */
+
+	/*
+	 * The model can batch its questions through the ask_user tool.  They are
+	 * shown as a tabbed sheet above the composer: one tab per question, the
+	 * answer advances to the next tab, and Submit hands the whole answers
+	 * object back so the agent can continue in the same run.
+	 */
+	var qsheet = null;
+
+	UI.cancelQuestions = function () {
+		if (!qsheet) return;
+		var s = qsheet;
+		qsheet = null;
+		try { if (s.el && s.el.remove) s.el.remove(); } catch (e) { /* ignore */ }
+		try { s.resolve({ cancelled: true }); } catch (e) { /* ignore */ }
+	};
+
+	UI.askQuestions = function (questions) {
+		UI.cancelQuestions();
+		return new Promise(function (resolve) {
+			if (!UI.dlgPanel || !questions || !questions.length) { resolve({}); return; }
+			var $ = EAI.jq;
+			var chat = $('#eai-chat', UI.dlgPanel);
+			if (!chat.length) { resolve({}); return; }
+			var box = chat[0].getBoundingClientRect();
+
+			var state = {
+				qs: questions.map(function (q) {
+					return {
+						id: String(q.id),
+						text: String(q.text || ''),
+						options: Array.isArray(q.options) ? q.options : [],
+						allowCustom: q.allowCustom !== false
+					};
+				}),
+				answers: {},
+				idx: 0
+			};
+
+			var el = $('<div class="eai-qsheet"></div>');
+			el.attr('style', st({
+				position: 'fixed',
+				left: box.left + 'px',
+				width: box.width + 'px',
+				bottom: (window.innerHeight - box.bottom) + 'px',
+				maxHeight: box.height + 'px',
+				zIndex: '2147483005',
+				display: 'flex', flexDirection: 'column',
+				background: '#ffffff',
+				border: '1px solid ' + C.border,
+				borderRadius: '10px 10px 0 0',
+				boxShadow: '0 -12px 34px rgba(9,20,38,.20)',
+				overflow: 'hidden'
+			}));
+			$(document.body).append(el);
+
+			var head = $('<div class="eai-q-head"></div>');
+			head.attr('style', st({
+				flex: '0 0 auto', padding: '9px 12px 6px',
+				borderBottom: '1px solid ' + C.border, background: C.surface
+			}));
+
+			var tabs = $('<div class="eai-q-tabs"></div>');
+			tabs.attr('style', st({
+				display: 'flex', gap: '6px', overflowX: 'auto', marginTop: '6px',
+				whiteSpace: 'nowrap', paddingBottom: '2px'
+			}));
+
+			var body = $('<div class="eai-q-body"></div>');
+			body.attr('style', st({
+				flex: '1 1 auto', minHeight: '0', overflowY: 'auto',
+				padding: '10px 12px'
+			}));
+
+			var foot = $('<div class="eai-q-foot"></div>');
+			foot.attr('style', st({
+				flex: '0 0 auto', display: 'flex', gap: '8px',
+				justifyContent: 'flex-end', padding: '8px 12px',
+				borderTop: '1px solid ' + C.border, background: C.surface
+			}));
+
+			head.append('<div style="' + st({
+				fontSize: '12.5px', fontWeight: '600', color: C.text
+			}) + '">需要你的确认（可一次答完）</div>');
+			head.append(tabs);
+
+			var cancelBtn = $('<button type="button">取消</button>');
+			cancelBtn.attr('style', st({
+				height: '30px', padding: '0 14px', borderRadius: '8px', cursor: 'pointer',
+				border: '1px solid ' + C.border, background: '#fff', color: '#4b5a70',
+				fontSize: '12px'
+			}));
+			var submitBtn = $('<button type="button">提交</button>');
+			submitBtn.attr('style', st({
+				height: '30px', padding: '0 16px', borderRadius: '8px', cursor: 'pointer',
+				border: '1px solid ' + C.primary, background: C.primary, color: '#fff',
+				fontSize: '12px', fontWeight: '600'
+			}));
+			foot.append(cancelBtn).append(submitBtn);
+
+			el.append(head).append(body).append(foot);
+
+			function answeredCount() {
+				var n = 0;
+				state.qs.forEach(function (q) { if (state.answers[q.id] !== undefined && String(state.answers[q.id]).trim() !== '') n++; });
+				return n;
+			}
+
+			function renderTabs() {
+				tabs.empty();
+				state.qs.forEach(function (q, i) {
+					var done = state.answers[q.id] !== undefined && String(state.answers[q.id]).trim() !== '';
+					var t = $('<button type="button"></button>');
+					t.attr('data-qi', i);
+					t.attr('style', st({
+						height: '26px', padding: '0 10px', borderRadius: '999px',
+						border: '1px solid ' + (i === state.idx ? C.primary : C.border),
+						background: i === state.idx ? '#e8f1ff' : '#fff',
+						color: i === state.idx ? C.primary : '#4b5a70',
+						fontSize: '11.5px', cursor: 'pointer', flex: '0 0 auto'
+					}));
+					t.text((i + 1) + (done ? ' ✓' : '') + ' · ' + (q.text || q.id).slice(0, 10));
+					t.on('click', function () { state.idx = i; render(); });
+					tabs.append(t);
+				});
+			}
+
+			function renderBody() {
+				body.empty();
+				var q = state.qs[state.idx];
+				if (!q) return;
+
+				body.append('<div style="' + st({
+					fontSize: '12.5px', color: C.text, lineHeight: '1.6', marginBottom: '8px'
+				}) + '">' + U.esc(q.text) + '</div>');
+
+				q.options.forEach(function (o) {
+					var val = String(o.value === undefined ? o.label : o.value);
+					var label = String(o.label === undefined ? o.value : o.label);
+					var active = String(state.answers[q.id] || '') === val;
+					var b = $('<button type="button"></button>');
+					b.attr('style', st({
+						display: 'block', width: '100%', textAlign: 'left',
+						margin: '0 0 6px', padding: '8px 10px', borderRadius: '8px',
+						border: '1px solid ' + (active ? C.primary : C.border),
+						background: active ? '#eef5ff' : '#fff',
+						color: C.text, fontSize: '12px', cursor: 'pointer'
+					}));
+					b.text(label);
+					b.on('click', function () {
+						state.answers[q.id] = val;
+						advance();
+					});
+					body.append(b);
+				});
+
+				if (q.allowCustom) {
+					var input = $('<input type="text">');
+					input.attr('placeholder', '或直接输入答案…');
+					input.attr('style', st({
+						width: '100%', boxSizing: 'border-box', height: '30px',
+						padding: '0 9px', marginTop: '4px', borderRadius: '8px',
+						border: '1px solid ' + C.border, fontSize: '12px', outline: 'none'
+					}));
+					input.val(state.answers[q.id] || '');
+					input.on('input', function () {
+						state.answers[q.id] = $(this).val();
+						renderTabs();
+						updateFoot();
+					});
+					input.on('keydown', function (e) {
+						if (e.key === 'Enter') { e.preventDefault(); advance(); }
+					});
+					body.append(input);
+				}
+			}
+
+			function updateFoot() {
+				var n = answeredCount();
+				submitBtn.text('提交（' + n + '/' + state.qs.length + '）');
+				submitBtn.css('opacity', n ? '1' : '.6');
+			}
+
+			function render() {
+				renderTabs();
+				renderBody();
+				updateFoot();
+			}
+
+			function advance() {
+				var next = -1, i;
+				for (i = 1; i <= state.qs.length; i++) {
+					var j = (state.idx + i) % state.qs.length;
+					var v = state.answers[state.qs[j].id];
+					if (v === undefined || String(v).trim() === '') { next = j; break; }
+				}
+				if (next >= 0) state.idx = next;
+				render();
+			}
+
+			var done = false;
+			function finish(result) {
+				if (done) return;
+				done = true;
+				qsheet = null;
+				try { el.remove(); } catch (e) { /* ignore */ }
+				resolve(result);
+			}
+
+			cancelBtn.on('click', function () {
+				try { EAI.log('ask_user cancelled'); } catch (e) { /* ignore */ }
+				finish({ cancelled: true });
+			});
+			submitBtn.on('click', function () {
+				finish(EAI.util.clone(state.answers));
+			});
+
+			qsheet = { el: el, resolve: finish };
+			render();
+
+			try { EAI.i18n && EAI.i18n.apply && EAI.i18n.apply(el[0]); } catch (e) { /* ignore */ }
+			try { EAI.i18n && EAI.i18n.watch && EAI.i18n.watch(el[0]); } catch (e) { /* ignore */ }
+		});
+	};
 
 	/* ------------------------------------------------------------- send -- */
 

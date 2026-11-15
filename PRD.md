@@ -105,6 +105,9 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
   「正在调用工具 · 第 N 次 · 工具名」，本轮结束时折叠为
   「本轮工具调用 N 次：工具 ×次数」，点击卡片展开逐条「序号 + 工具名 + 参数」明细；
   卡片始终位于本轮回答**上方**，不产生逐条系统消息
+- **问答页签（ask_user）**：模型提问时在聊天区上方弹出上拉面板，每题一个页签；
+  选中答案后自动跳到下一题，已答页签显示 ✓，底部「提交（n/总）」把答案对象回填给
+  模型并继续执行；「取消」或停止按钮结束提问
 - 消息：用户右对齐、AI/系统/错误左对齐；头像为线性图标
 - **复制**：每条 AI / 错误消息下方有复制按钮（原始 Markdown，clipboard API + execCommand 兜底）
 - 弹窗可拖动标题栏移动、拖右边/下边/右下角缩放（捕获阶段监听，避免松手失效）
@@ -181,14 +184,22 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 
 ### 3.9 生成原理图
 
-取件顺序（强制）：
+步骤（强制，一次做到结束）：
 
-1. `search_library` 检索系统库（`POST /api/components/search`，返回 uuid/封装/厂商/LCSC/docType）
-2. 命中 → `place_device`（`createShape {shapeType:'schlib', uuid, docType}`，保留封装与 BOM）
-3. 未命中 → `create_symbol` 用模型知识现场生成（符号名、引脚编号/名称、封装、料号）
-4. `create_wire` / `create_net_label` 连线与命名
+1. **先一次性问清**：电源电压/电源轨、关键 IC 型号、封装、接口与连接器脚位等，
+   全部通过 `ask_user` 一次提出并等待回答；**不允许**用普通文本提问后就停下
+2. **常用器件用内置模板**（不查库，模板在 `extension/parts.js`，即 `EAI.parts`）：
+   R / C / L / D / LED / SW / Q_NPN / Q_PNP / M_NMOS / M_PMOS / XTAL / CONN2，
+   放置时给 `designator` 与 `value`
+3. **其余器件批量检索**：`search_library` 接受 `queries[]`，一次调用查多个型号
+4. **批量放置**：`place_devices` 一次调用放完；库器件给 `uuid` + `docType`，
+   内置器件给 `part`；不传 x/y 时按图框自动排版
+5. **图框约束**：坐标统一夹到图纸范围内——图框本体是一个 `frame_lib` schlib 块，
+   其位置给出纸张大小，没有图框时用 canvas 尺寸；越界坐标自动贴边修正
+6. 系统库没有且非内置 → `create_symbol` 一次画完（不截图核对）
+7. `create_wire` / `create_net_label` 连线与命名
 
-约束：坐标单位 1 = 10 mil，取 10 的整数倍，器件间距 ≥ 40；生成后不再截图核对。
+约束：坐标单位 1 = 10 mil；完成后说明哪些来自系统库、哪些用内置模板、哪些现场生成。
 
 ### 3.10 符号生成
 
@@ -237,8 +248,12 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
   此时 `role:'tool'` 消息改写成 user 文本（`[tool 名称] + 结果`），
   既避免"孤儿 tool 消息"被服务端 400，也保证模型仍看得到已取到的数据
 - **空回复追问**：用过工具但最终无正文时，自动追加"直接给出最终结论"再请求一次
-- **工具收敛**：单轮累计 12 次工具调用后禁用工具并强制总结
-- **步数上限**：到达上限时再补一次"无工具"请求；仍无正文则提示用户调大步数
+- **工具收敛**：单轮累计达到「最大工具调用次数」（默认 80，可配置）后禁用工具并强制总结；
+  批量工具（`place_devices`、`search_library` 的 `queries[]`）让上百个元件也只占少量额度
+- **步数上限**：默认 40 步（每步一次模型请求），到达上限时再补一次"无工具"请求；
+  仍无正文则提示用户调大步数
+- **等待用户**：`ask_user` 工具会挂起循环，等用户在问答面板提交后把答案作为工具结果
+  回填，然后继续同一次运行（不需要用户再发一条消息）
 - HTTP 200 但返回 `{error:…}` 的网关错误会被识别并抛出
 - `tools` 字段被网关拒绝（400/404/422 且含 tool 关键字）时，降级为无工具重试
 
@@ -257,9 +272,11 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 | `set_component_designator` | 改位号 | designator, newDesignator |
 | `audit_components` | 找出属性不全的元件 | — |
 | `set_component_params` | 批量写 c_para | designator + 各属性 |
-| `search_library` | 系统库检索 | query, limit |
-| `place_device` | 放置系统库器件 | uuid, docType, x, y |
-| `place_part` | 内置 R/C/L/D/LED/SW/通用件 | part, x, y, value… |
+| `search_library` | 系统库**批量**检索 | queries[]（最多 20）, limit |
+| `place_device` | 放置单个系统库器件 | uuid, docType, x, y |
+| `place_devices` | **批量**放置（库器件或内置件，自动排版+图框约束） | placements[] |
+| `place_part` | 内置 R/C/L/D/LED/SW/Q_NPN/Q_PNP/M_NMOS/M_PMOS/XTAL/CONN2/通用件 | part, x, y, value… |
+| `ask_user` | 一次提出多个问题并等待回答 | questions[{id,text,options[]}] |
 | `create_wire` | 画导线 | points[] |
 | `create_net_label` | 放网络标签 | x, y, name |
 | `create_symbol` | 生成完整符号（兜底） | name, package, pins[], manufacturerPart… |

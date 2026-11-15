@@ -29,7 +29,7 @@ const PROJECT = 'ext-easyeda-std-ai-assistant';
 const REQUIRED = [
 	'manifest.json', 'locale.txt', 'icon.svg',
 	'core.js', 'prompts.js', 'i18n.js', 'llm.js', 'eda.js', 'eda-netlist.js',
-	'actions.js', 'tools.js', 'agent.js',
+	'parts.js', 'actions.js', 'tools.js', 'agent.js',
 	'ui-base.js', 'ui.js', 'ui-report.js', 'ui-settings.js', 'ui-about.js', 'main.js'
 ];
 

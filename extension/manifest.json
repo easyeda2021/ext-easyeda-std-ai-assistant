@@ -1,7 +1,7 @@
 {
 	"name": "AI 助手",
 	"description": "AI 原理图审查 / PCB 审查 / BOM 分析 / 截图评审 / 自动生成原理图",
-	"version": "0.0.37",
+	"version": "0.0.40",
 	"icons": {
 		"default": "icon.svg"
 	},
@@ -13,6 +13,7 @@
 		"llm.js",
 		"eda.js",
 		"eda-netlist.js",
+		"parts.js",
 		"actions.js",
 		"tools.js",
 		"agent.js",
