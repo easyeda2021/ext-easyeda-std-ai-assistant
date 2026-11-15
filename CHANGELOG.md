@@ -14,7 +14,8 @@
 
 - **扩展开发指南**：新增 `easyeda-std-extension-api.md`，覆盖运行模型、包结构、
   API 参考、文档数据模型、UI、网络与 CORS、配置持久化、国际化、限制与坑、
-  最小完整示例，可直接照此开发新扩展；第 15 章给出与官方 API 文档的对照，
+  最小完整示例，可直接照此开发新扩展；附录 A 为全量 API 参考，附录 B 为文件格式字段参考，
+  第 16 章给出与官方 API 文档的对照，
   文件格式链接官方仓库；补齐官方 API 全量清单（getSource/applySource、批量操作、
   选择、坐标换算等）并注明 `createToolbarButton` 在 V6 不再显示
 - **安装包内附英文安装说明**：`安装说明.txt`（中文）与 `INSTALL.en.txt`（English）并列，

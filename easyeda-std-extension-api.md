@@ -2,11 +2,14 @@
 
 > 面向想为 **嘉立创EDA标准版（EasyEDA Std，v6 前端）** 开发本地扩展的开发者。
 > 本文按「运行模型 → 包结构 → API → 数据模型 → UI → 网络 → 配置 → 国际化 →
-> 限制与坑 → 实践建议」组织，读完即可从零写一个可用扩展。
+> 限制与坑 → 实践建议」组织，附录 A 是全量 API 参考，附录 B 是文件格式字段参考。
+> 内容自足，可单独作为开发手册使用，无需再对照其他文档。
 
-- 适用对象：标准版（Std）扩展
+- 适用对象：标准版（Std）扩展与用户脚本
 - 不适用：专业版（Pro）。Pro 使用 `.eext` 打包与 `eda.dmt_*` 对象体系，
   与标准版扩展不通用，本文不涉及。
+- 文档结构：1–13 章为开发指南（含完整示例），14–15 章为速查附录，
+  16 章说明与官方资料的对应关系。
 
 ---
 
@@ -59,6 +62,21 @@ localStorage key、命令前缀**都必须带自己的标识：
 ```js
 var CFG_KEY = 'myext.config.v1.' + myExtensionId;
 ```
+
+### 1.5 用户脚本（不打包成扩展）
+
+只想跑一次或临时调试时，不必安装扩展：**高级 → 扩展 → 运行脚本 / 加载脚本**，
+把代码贴进编辑器执行即可，脚本环境同样能使用 `api(...)`。
+
+| 方式 | 适合 |
+|---|---|
+| 运行脚本 | 临时改一批属性、批量放置图元、验证 API 返回值 |
+| 加载脚本 | 让脚本常驻在「用户脚本」列表，随时重复运行 |
+| 扩展 | 需要菜单、工具栏、配置、面板等持久入口时 |
+
+用户脚本没有 manifest，因此**不能注册菜单按钮**；需要持久入口请做成扩展。
+调试技巧：先 `getSource({type:'json'})` 拿到真实结构，改完用
+`applySource({source, createNew:true})` 在一份新文档里验证，避免破坏原工程。
 
 ---
 
@@ -427,7 +445,7 @@ api('getSvgArcPathByCRA', { cx: 0, cy: 0, rx: 90, ry: 90, startAngle: 0.1, endAn
 
 > **文件格式的权威说明**：<https://github.com/easyeda/easyeda-std-file-format>
 > —— 包含通用格式、原理图/PBC 图元、各 docType 文件结构以及完整示例 JSON。
-> 本章只讲扩展开发时最常打交道的部分，字段细节请以该仓库为准。
+> 本章讲扩展开发时最常打交道的部分；**全量字段速查见附录 B（第 15 章）**。
 
 **docType 对照**
 
@@ -825,67 +843,239 @@ var lang = (Locale && Locale._curr) || 'en';   // 未知时按英文处理
 
 ---
 
-## 14. 附录
+## 14. 附录 A：API 全量参考
 
-### 14.1 API 全量速查
+调用约定：`api(name, args)` 同步返回；`name` 区分大小写；不同客户端版本可能增减参数。
+「扩展环境」标注的 API 只在扩展/脚本环境可用，官方 API List 未逐项列出但已在
+编辑器内实测可用。
 
-**文档读取 / 整体写回**
+### 14.1 文档源
 
-| API | 作用 | 详见 |
-|---|---|---|
-| `getSource({type:'json'\|'compress'\|'svg'})` | 读当前文档源 | 4.11 |
-| `applySource({source, createNew})` | 整体写回 / 新开编辑器载入 | 4.11 |
-| `getActiveJson()` / `getActiveFileTitle()` | 当前文档 JSON / 标题 | 4.5 |
-| `getActiveProjectAllSchJson()` | 整工程多图纸 | 4.5 |
+| API | 参数 | 返回 | 说明 |
+|---|---|---|---|
+| `getSource` | `{type:'json'\|'compress'\|'svg'}` | object / string | `json` 可读对象；`compress` 数据库存储串；`svg` 矢量源码 |
+| `applySource` | `{source, createNew}` | – | `createNew:true` 新开编辑器，`false` 替换当前文档 |
+| `getActiveJson` | – | object | 当前文档 JSON（扩展环境） |
+| `getActiveFileTitle` | – | string | 当前文档标题（扩展环境） |
+| `getActiveProjectAllSchJson` | – | object | 整工程多图纸 `{schematics:[{tabid,title,json}]}`（扩展环境） |
 
-**图元**
+### 14.2 图元增删改查
 
-| API | 作用 | 详见 |
-|---|---|---|
-| `getShape({id})` | 读取单个图元 | 4.6 |
-| `updateShape({shapeType, jsonCache})` | 修改图元 | 4.6 |
-| `createShape({shapeType, …})` | 创建图元 / 放置库器件 | 4.6 |
-| `insertShape([…])` | 旧式批量创建 | 4.6 |
-| `clone({ids})` / `delete({ids})` | 复制 / 删除 | 4.12 |
-| `rotate` / `rotate_left` / `rotate_right` | 旋转 | 4.12 |
-| `fliph` / `flipv` / `align_left…bottom` | 翻转 / 对齐 | 4.12 |
-| `moveObjs` / `moveObjsTo` | 相对 / 绝对移动 | 4.12 |
+| API | 参数 | 返回 | 说明 |
+|---|---|---|---|
+| `getShape` | `{id}` | object | 按 gId 读单个图元 |
+| `createShape` | `{shapeType, …}` | object / gId | 创建图元；可直接给字段、`jsonCache`、`shortUrl/from/title` 或库器件 |
+| `updateShape` | `{shapeType, jsonCache}` | – | `jsonCache.gId` 必填，只改给定字段 |
+| `insertShape` | `[{shapeTypeName, …}]` | – | 旧式批量创建（脚本示例常用） |
+| `clone` | `{ids:[gId]}` | gId[] | 复制并返回新 id |
+| `delete` | `{ids:[gId]}` | – | 删除 |
 
-**选择与坐标**
+**shapeType 全量**
 
-| API | 作用 | 详见 |
-|---|---|---|
-| `select({ids})` / `selectNone()` / `getSelectedIds()` | 选择状态 | 4.13 |
-| `setOriginXY({x,y})` | 映射真实原点 | 4.14 |
-| `coordConvert` / `valConvert` | 坐标 / 数值换算 | 4.14 |
-| `getSvgArcPathByCRA` | 圆弧转 SVG path | 4.14 |
-
-**界面与扩展**
-
-| API | 作用 | 详见 |
-|---|---|---|
-| `createCommand({…})` | 注册命令（键名带扩展 ID 前缀） | 4.1 |
-| `createExtensionMenu([…])` | 「高级」菜单 | 4.2 |
-| `createToolbarButton({…})` | 工具栏按钮（**V6 不显示**） | 4.3 |
-| `createDialog({…})` | EasyUI 对话框（默认关闭） | 4.4 |
-| `readConfig(key)` / `saveConfig(payload)` | 扩展配置读写 | 4.7 |
-| `getRes(name)` | 读取扩展内资源 | 4.8 |
-| `editorCall({cmd,args})` | 帧内编辑器命令 | 4.9 |
-| `window.callByEditor({func,args,uuid})` | 顶层命令总线 | 4.10 |
-
-### 14.2 字段速查
-
-| 字段 | 含义 |
+| 文档 | 取值 |
 |---|---|
-| `annotation.P` | 位号 |
-| `annotation.N` | 名称 / 值 |
-| `c_para.package` | 封装 |
-| `c_para.Manufacturer Part` | 厂商型号 |
-| `head.gId / x / y / rotation` | 图元标识与位置 |
-| `itemOrder` | 绘制顺序 |
-| `fileType` | 文档类型（sch / pcb / schlib / pcblib） |
+| 原理图 | `schlib` `rect` `polyline` `polygon` `wire` `bus` `image` `circle` `ellipse` `line` `path` `arc` `annotation` `junction` `netlabel` `busentry` `arrowhead` `noconnectflag` `pin` `netflag` |
+| PCB | `FOOTPRINT` `TRACK` `COPPERAREA` `SOLIDREGION` `RECT` `CIRCLE` `TEXT` `ARC` `DIMENSION` `PAD` `VIA` `HOLE` |
 
-## 15. 与官方文档的关系
+### 14.3 变换与移动
+
+| API | 参数 | 说明 |
+|---|---|---|
+| `rotate` | `{ids, degree}` | 旋转到指定角度 |
+| `rotate_left` / `rotate_right` | `{ids}` | 逆时针 / 顺时针 90° |
+| `fliph` / `flipv` | `{ids}` | 水平 / 垂直翻转 |
+| `align_left` / `align_right` / `align_top` / `align_bottom` | `{ids}` | 对齐 |
+| `moveObjs` | `{objs?, addX, addY}` | 相对移动；`objs` 省略时作用于选中对象 |
+| `moveObjsTo` | `{objs?, x, y}` | 移动到绝对坐标 |
+
+`objs` 元素可以是 gId 字符串，也可以是 `{gId:'…'}`。
+
+### 14.4 选择
+
+| API | 参数 | 返回 | 说明 |
+|---|---|---|---|
+| `select` | `{ids}` | – | 选中指定图元 |
+| `selectNone` | – | – | 取消全部选中 |
+| `getSelectedIds` | – | gId[] | 当前选中集合 |
+
+### 14.5 坐标与单位
+
+| API | 参数 | 返回 | 说明 |
+|---|---|---|---|
+| `setOriginXY` | `{x, y}` | – | 把真实原点映射到画布坐标 |
+| `coordConvert` | `{type:'real2canvas'\|'canvas2real', x, y}` | number | 坐标换算，支持 `400mil` / `10mm` 写法 |
+| `valConvert` | `{type:'real2canvas'\|'canvas2real', val}` | number | 尺寸换算 |
+| `edit.unitConvert` | `{type:'mil2pixel'\|…, value}` | number | 旧式单位换算 |
+| `getSvgArcPathByCRA` | `{cx,cy,rx,ry,startAngle,endAngle,sweepFlag}` | string | 圆弧参数转 SVG path |
+
+### 14.6 界面与扩展环境
+
+| API | 参数 | 说明 |
+|---|---|---|
+| `createCommand` | `{'extension-<id>-<name>': fn}` | 注册命令；前缀不匹配会被**静默丢弃** |
+| `createExtensionMenu` | `[{text, fordoctype, submenu:[{text,cmd}] \| cmd}]` | 注册「高级」菜单 |
+| `createToolbarButton` | `{icon,title,text,fordoctype,cmd,menu}` | 工具栏按钮（**V6 不再显示**） |
+| `createDialog` | `{title,width,height,content}` | EasyUI 对话框（默认关闭） |
+| `readConfig` | `key` | 读扩展配置（字符串） |
+| `saveConfig` | `{[extId]:{[key]:value}}` | 写扩展配置 |
+| `getRes` | `name` | 读扩展目录内文件内容 |
+| `editorCall` | `{cmd, args}` | 帧内编辑器命令（扩展环境） |
+| `window.callByEditor` | `{func, args, uuid}` | 顶层命令总线（扩展环境） |
+
+---
+
+## 15. 附录 B：文件格式字段参考
+
+> 与官方仓库 <https://github.com/easyeda/easyeda-std-file-format> 一致；
+> 本章把常用字段整理成速查表，字段顺序即压缩串中的顺序。
+
+### 15.1 顶层结构与 docType
+
+| docType | 文档类型 | 顶层结构 |
+|---|---|---|
+| 1 | 原理图 | `{head, canvas, shape[], BBox}` |
+| 2 | 原理图符号 | 同上，`head.c_para` 含 `pre/name/package` |
+| 3 | PCB | `{head, canvas, shape[], layers[], objects[], BBox, preference, DRCRULE, netColors}` |
+| 4 | PCB 封装 | 同 PCB（`head.c_para` 含 `package/pre`） |
+| 5 | 原理图工程 | `{docType:'5', title, description, colors, schematics:[{docType:'1', title, dataStr:{head,canvas,shape,BBox}}]}` |
+
+### 15.2 通用结构
+
+**head**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `docType` | string | 文档类型（见上表） |
+| `editorVersion` | string | 编辑器版本 |
+| `newgId` | boolean | 内部器件是否生成唯一 id |
+| `c_para` | object | 文档级自定义属性（如 `pre` / `name` / `package`） |
+| `x` / `y` | string | 文档坐标原点 |
+| `hasIdFlag` | boolean | 库文件是否已绑定封装 uuid |
+| `c_spiceCmd` | string | 仿真指令（仅原理图） |
+
+**canvas**（`~` 分隔）
+
+```
+CA~viewWidth~viewHeight~backGround~gridVisible~gridColor~gridSize~canvasWidth~canvasHeight~gridStyle~snapSize~unit~altSnapSize~originX~originY
+```
+
+PCB 的 `canvas` 额外包含 `routingWidth`、`routingAngle`、`copperAreaDisplay`、
+`routeConflict`、`removeLoop` 等布线相关配置。
+
+**其他顶层键**
+
+| 键 | 说明 |
+|---|---|
+| `shape` | 字符串数组，每个元素是一个压缩图元 |
+| `BBox` | `{x, y, width, height}` 内容包围盒 |
+| `layers`（PCB） | `"layerid~name~color~visible~active~config~transparency~type"` |
+| `DRCRULE`（PCB） | `{Default:{trackWidth,clearance,viaHoleDiameter,viaHoleD}, isRealtime, …}` |
+| `preference`（PCB） | `{hideFootprints, hideNets}` |
+| `netColors`（PCB） | 网络配色映射 |
+
+**分隔符**
+
+| 分隔符 | 用途 |
+|---|---|
+| `~` | 分隔属性字段 |
+| `` ` `` | 分隔 `c_para` 键值对 |
+| `^^` | 复合图元分段（Pin、Netflag、PAD） |
+| `#@$` | 器件/封装内部图元连接 |
+
+### 15.3 原理图图元
+
+单位：**pixel（1 px = 10 mil）**；`strokeStyle`：`0` 实线 / `1` 虚线 / `2` 点线。
+
+| 图元 | 格式串 |
+|---|---|
+| 折线 | `PL~points~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked` |
+| 导线 | `W~points~…`（同折线，电气连接） |
+| 总线 | `B~points~…` |
+| 多边形 | `PG~points~…`（闭合） |
+| 矩形 | `R~x~y~rx~ry~width~height~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked~c_etype` |
+| 圆 | `C~cx~cy~r~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked` |
+| 椭圆 | `E~cx~cy~rx~ry~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked` |
+| 直线 | `L~x1~y1~x2~y2~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked` |
+| 路径 | `PT~pathString~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked` |
+| 圆弧 | `A~pathString~helperDots~strokeColor~strokeWidth~strokeStyle~fillColor~gId~locked` |
+| 图片 | `I~x~y~width~height~rotation~href~gId~locked` |
+| 文本 | `T~mark~x~y~rotation~fillColor~fontFamily~fontSize~fontWeight~fontStyle~dominantBaseline~type~value~visible~textAnchor~gId~locked~c_etype` |
+| 网络标签 | `N~x~y~rotation~fillColor~name~gId~textAnchor~textX~textY~fontFamily~fontSize~locked` |
+| 连接点 | `J~x~y~radius~fillColor~gId~locked` |
+| 无连接标志 | `O~x~y~gId~pathString~strokeColor~locked` |
+| 总线分支 | `BE~rotation~x1~y1~x2~y2~gId~locked` |
+| 箭头 | `AR~partType~x~y~gId~rotation~pathString~fillColor~locked~arrowType~arrowSize` |
+| 器件 | `LIB~x~y~c_para~rotation~importFlag~gId~puuid~uuid~locked~bindPcbId~convertToPcb~addIntoBom#@$图元1#@$图元2…` |
+
+**文本的 mark**：`L` 普通 / `N` 名称（值）/ `P` 位号 / `PK` 封装名。
+
+**引脚 P**（`^^` 分段）
+
+```
+P~display~electric~spicePin~x~y~rotation~gId~locked ^^ x~y ^^ pathString~pinColor ^^ name段 ^^ number段 ^^ dot段 ^^ clock段
+```
+
+| 段 | 格式 |
+|---|---|
+| 配置 | `P~display~electric~spicePin~x~y~rotation~gId~locked` |
+| 吸附点 | `x~y` |
+| 路径 | `pathString~pinColor` |
+| 名称 | `visible~x~y~rotation~text~textAnchor~fontFamily~fontSize~fillColor` |
+| 编号 | 同名称 |
+| 终点圆 | `visible~x~y` |
+| 时钟 | `visible~pathString` |
+
+**网络标识 F**（`^^` 分段）
+
+```
+F~partId~x~y~rotation~gId~transform~locked ^^ x~y ^^ text~color~x~y~rotation~textAnchor~visible~fontFamily~fontSize~gId ^^ 图形…
+```
+
+### 15.4 PCB 图元
+
+单位：官方文档说明画布以 **10 mil** 为基本单位；实际 JSON 数值与编辑器显示单位
+（mil / mm / inch）不同，读写以 JSON 数值为准，跨单位计算请用 `valConvert` 校验。
+
+| 图元 | 格式串 |
+|---|---|
+| 导线 | `TRACK~strokeWidth~layerid~net~points~gId~locked` |
+| 矩形 | `RECT~x~y~width~height~layerid~gId~locked~strokeWidth~fill~transform~net~c_etype` |
+| 圆 | `CIRCLE~cx~cy~r~strokeWidth~layerid~gId~locked~net~transformarc` |
+| 圆弧 | `ARC~strokeWidth~layerid~net~pathString~helperDots~gId~locked` |
+| 文本 | `TEXT~type~x~y~strokeWidth~rotation~mirror~layerid~net~fontSize~text~pathStr~display~gId~fontFamily~locked~c_etype` |
+| 焊盘 | `PAD~shape~x~y~width~height~layerid~net~number~holeR~pointArr~rotation~gId~holeLength~slotPointArr~plated~locked~pasteExpansion~solderExpansion~holeCenter` |
+| 过孔 | `VIA~x~y~diameter~net~holeR~gId~locked` |
+| 通孔 | `HOLE~x~y~holeR~gId~locked` |
+| 铺铜 | `COPPERAREA~strokeWidth~layerid~net~pathStr~clearanceWidth~fillStyle~gId~thermal~keepIsland~compressData~locked~name~order~gridTrackWidth~gridClearance~toBoardOutline~fabricationImprove~spokeWidth` |
+| 实心填充 | `SOLIDREGION~layerid~net~pathStr~type~gId~teardrop~targetPad~targetWire~locked` |
+| 尺寸标注 | `DIMENSION~layerid~pathString~gId~fontSize~locked~measuringType~fontWidth` |
+| 封装 | `LIB~x~y~c_para~rotation~importFlag~gId~layerid~uuid~utime~locked#@$图元1#@$图元2…` |
+| 图形组合 | `SVGNODE~{JSON}` |
+
+**枚举**
+
+| 字段 | 取值 |
+|---|---|
+| `PAD.shape` | `ELLIPSE` / `RECT` / `OVAL` / `POLYGON` |
+| `PAD.plated` | `Y` / `N` |
+| `SOLIDREGION.type` | `solid` / `cutout` / `npth` |
+| `TEXT.type` | `L` 普通 / `P` 位号 |
+| `layers` 常用 id | `1` TopLayer、`2` BottomLayer、`3` TopSilkLayer（其余以 `layers` 数组为准） |
+
+### 15.5 `c_para` 常用键
+
+| 键 | 说明 |
+|---|---|
+| `package` | 封装名 |
+| `name` / `pre` | 名称 / 位号前缀（库文件） |
+| `value` | 值 |
+| `Manufacturer` / `Manufacturer Part` | 厂商 / 厂商型号 |
+| `Supplier` / `Supplier Part` | 供应商 / 供应商编号 |
+| `BOM_` 前缀键 | 读取时会被剥离为同名的普通键 |
+
+---
+
+## 16. 与官方文档的关系
 
 官方资料（建议对照阅读）：
 
@@ -897,7 +1087,7 @@ var lang = (Locale && Locale._curr) || 'en';   // 未知时按英文处理
 | [API Examples](https://docs.easyeda.com/en/API/4-API-Examples/) | 示例工程代码 |
 | [Standard file format](https://github.com/easyeda/easyeda-std-file-format) | 文档 JSON 格式说明与各 docType 示例 |
 
-**覆盖情况**：官方 API List 中的函数在本文第 4 章与 14.1 节已全部列出；
+**覆盖情况**：官方 API List 中的函数在本文第 14 章已全部列出；
 本文在官方"示例式"说明之外，补充了扩展工程化必需的部分——扩展 ID 与命令前缀、
 配置持久化、自绘弹窗与拖动/缩放、CORS 与流式请求、国际化、常见坑与发布流程。
 
