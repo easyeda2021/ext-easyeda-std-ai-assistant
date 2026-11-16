@@ -139,6 +139,22 @@
 	 * @returns {Array} [{gId, designator, name, package, value, params, x, y,
 	 *                   rotation, custom[], pins[]}]
 	 */
+	/** Canvas / grid settings of the active document. */
+	D.canvasInfo = function (json) {
+		json = json || D.activeJson() || {};
+		var c = json.canvas || {};
+		return {
+			unit: c.unit || 'pixel',
+			gridSize: Number(c.gridSize) || 0,
+			snapSize: Number(c.snapSize) || 0,
+			altSnapSize: Number(c.altSnapSize) || 0,
+			originX: Number(c.originX) || 0,
+			originY: Number(c.originY) || 0,
+			width: Number(c.canvasWidth) || 0,
+			height: Number(c.canvasHeight) || 0
+		};
+	};
+
 	D.components = function (json) {
 		var out = [];
 		if (!json || !json.schlib) return out;

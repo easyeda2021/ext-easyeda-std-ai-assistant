@@ -167,7 +167,7 @@ function installNotes(version) {
 		'--------',
 		'1. 打开嘉立创EDA → 高级 → 扩展 → 扩展配置',
 		'2. 点击「加载扩展 / Load extension」',
-		'3. 一次性全选本目录下的所有文件（manifest.json / locale.txt / icon*.* / *.js）',
+		'3. 一次性全选本目录下的所有文件（manifest.json / locale.txt / icon*.* / app.js）',
 		'4. 扩展 ID 自行填写一个英文标识（例如 aiassistant），记下来即可',
 		'5. 确认后刷新页面，工具栏出现「AI 助手」按钮',
 		'6. 高级菜单 → AI 助手 → 设置… 里填写接口地址 / API Key / 模型',
@@ -192,7 +192,7 @@ function installNotesEn(version) {
 		'-------',
 		'1. EasyEDA Std -> Advanced -> Extension -> Extension configuration',
 		'2. Click "Load extension"',
-		'3. Select ALL files in this folder at once (manifest.json / locale.txt / icon*.* / *.js)',
+		'3. Select ALL files in this folder at once (manifest.json / locale.txt / icon*.* / app.js)',
 		'4. Enter any English identifier as the extension ID (e.g. aiassistant) and remember it',
 		'5. Confirm, reload the editor; an "AI Assistant" button appears in the toolbar',
 		'6. Advanced -> AI Assistant -> Settings... to fill in endpoint / API key / model',
@@ -228,12 +228,29 @@ function main() {
 	const { from, to } = bumpVersion(explicitVersion);
 
 	const name = PROJECT + '-v' + to;
+	/* drop every previous build so dist only holds the current version */
+	fs.rmSync(DIST, { recursive: true, force: true });
 	const out = path.join(DIST, name);
-	fs.rmSync(out, { recursive: true, force: true });
 	fs.mkdirSync(out, { recursive: true });
 
 	const files = fs.readdirSync(SRC).filter((f) => fs.statSync(path.join(SRC, f)).isFile());
 	files.forEach((f) => fs.copyFileSync(path.join(SRC, f), path.join(out, f)));
+
+	/* one script file is easier to load; the host only needs manifest.scripts */
+	const bundle = process.argv.indexOf('--no-bundle') < 0;
+	if (bundle) {
+		const distManifest = JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8'));
+		const scripts = distManifest.scripts || [];
+		const parts = scripts.map(function (f) {
+			return '/* ===== ' + f + ' ===== */' + String.fromCharCode(10) +
+				fs.readFileSync(path.join(SRC, f), 'utf8');
+		});
+		fs.writeFileSync(path.join(out, 'app.js'), parts.join(String.fromCharCode(10, 10)), 'utf8');
+		distManifest.scripts = ['app.js'];
+		fs.writeFileSync(path.join(out, 'manifest.json'),
+			JSON.stringify(distManifest, null, String.fromCharCode(9)) + String.fromCharCode(10), 'utf8');
+		scripts.forEach(function (f) { fs.rmSync(path.join(out, f), { force: true }); });
+	}
 	/* install notes: Chinese first, English copy next to it */
 	fs.writeFileSync(path.join(out, '安装说明.txt'), installNotes(to), 'utf8');
 	fs.writeFileSync(path.join(out, 'INSTALL.en.txt'), installNotesEn(to), 'utf8');

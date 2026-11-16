@@ -527,12 +527,31 @@
 			.html('&#10005;');
 		var body = $('<div>').attr('style', bodyCss).attr('class', 'eai-window-body');
 
-		head.append(title).append(closeBtn);
+		/* collapse to just the title bar (handy while editing the canvas) */
+		var collapseBtn = $('<a href="#" title="收起 / 展开"></a>')
+			.attr('style', xCss).html('&#9660;');
+		head.append(title).append(collapseBtn).append(closeBtn);
 		card.append(head).append(body);
 		root.append(card);
 		$('body').append(root);
 
 		if (opts.content) body.html(opts.content);
+
+		var collapsed = false, prevHeight = '';
+		collapseBtn.on('click', function (e) {
+			e.preventDefault();
+			collapsed = !collapsed;
+			if (collapsed) {
+				prevHeight = card[0].style.height || (height + 'px');
+				card[0].style.height = '42px';
+				body.css('display', 'none');
+				collapseBtn.html('&#9650;');
+			} else {
+				card[0].style.height = prevHeight;
+				body.css('display', '');
+				collapseBtn.html('&#9660;');
+			}
+		});
 
 		/* translate the rendered UI when the editor is not Chinese */
 		if (EAI.i18n && EAI.i18n.apply) {

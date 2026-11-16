@@ -38,21 +38,23 @@
 			'绝不要把之前会话的图片再做一遍。',
 			'7. create_symbol 一次调用就会画好矩形框、逐个引脚与 c_para 属性，' +
 			'调用后不要再截图核对或反复修正。',
-			'8. 画原理图时必须优先用系统库：先 search_library 搜型号，命中就 ' +
-			'place_device 放置；只有系统库没有时，才用 create_symbol 凭你的知识' +
+			'8. 画原理图时必须优先用系统库：先 search_library 搜型号，命中就用 place 放置；' +
+			'只有系统库没有时，才用 create_symbol 凭你的知识' +
 			'生成符号（给出符号名、引脚编号、引脚名称）并直接放到画布。',
 			'9. 任务中如有需要用户确认的信息（电压、具体型号、封装、脚位等），必须用 ' +
 			'ask_user 一次性全部提出并等待回答，**不要**用普通文本提问后停止；' +
 			'收到回答后继续把任务做完，只有全部完成才输出最终说明。',
-			'10. 放置内置器件用 place_part / place_devices 的键名；新建符号时 name 传型号或值、' +
+			'10. 放置用 place（一次可放多个），修改属性用 update_component；新建符号时 name 传型号或值、' +
 			'pre 传一个字母（如 U），引脚编号会自动显示，不要额外添加文字注释。',
-			'11. 删除元件用 delete_components（传位号或 gId），不要试图用别的工具变通。'
+			'11. 删除元件用 delete_components（传位号或 gId），不要试图用别的工具变通。',
+			'12. 需要坐标时先调用 get_document_info：返回值里有 grid（snapSize/gridSize/origin）' +
+			'和 bounds（图框范围）。不要凭感觉猜坐标。'
 		];
 
 		var cat = P.builtinCatalog();
 		if (cat) {
 			rules.push('');
-			rules.push('可直接放置的内置器件（不查系统库，直接 place_part / place_devices）：' + cat);
+			rules.push('可直接放置的内置器件（不查系统库，直接用 place 的 part 键名）：' + cat);
 		}
 		return rules.join('\n');
 	};
@@ -103,15 +105,17 @@
 			'接口定义、连接器脚位等）用 ask_user **一次问完**（所有问题放进同一个调用）；' +
 			'收到回答后不再提问，直接按回答完成全部工作；' +
 			'② 规划元件清单（位号、型号、封装、数值）；' +
-			'③ 常用器件直接用内置模板，不需要查库（键名见系统提示里的内置器件清单：' +
+			'③ 常用器件直接用内置模板，不需要查库（place 的 part 键名见系统提示里的内置器件清单：' +
 			'R/C/L/D/LED/Q_NPN/Q_PNP/M_NMOS/M_PMOS/SW/CONN2/CONN3/CONN4/HDR2X2/HDR2X3/C_TAN）；' +
 			'④ 其余器件用 search_library **批量**检索：把多个型号放进 queries 数组，' +
 			'一次调用查完，不要一个型号调用一次；' +
-			'⑤ 放置统一用 place_devices 一次批量完成：库器件给 uuid，内置器件给 part，' +
+			'⑤ 放置统一用 place 一次批量完成：库器件给 uuid，内置器件给 part，' +
 			'通用 IC 用 part:"GENERIC" 并给 name、pinCount、pinNames（按引脚顺序）；' +
 			'不传 x/y 时会自动在图框内排版，任何越界坐标都会被夹回图框内；' +
 			'⑥ 只有系统库确实没有时才用 create_symbol 现场画符号（一次画完，不要截图核对）；' +
-			'⑦ 最后用 create_wire / create_net_label 连线并命名网络。' +
+			'⑦ 最后用 draw 连线并放置网络标签：place 的结果会返回' +
+			'每个元件的引脚坐标（pins: 1@x,y …），直接用这些坐标画线或放标签；工具会自动' +
+			'吸附到最近的引脚 / 导线端点，坐标差一格以内也能连上。' +
 			'坐标单位 1 = 10 mil。完成后说明哪些来自系统库、哪些用内置模板、哪些现场生成。',
 
 		'sch-symbol':

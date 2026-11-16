@@ -278,6 +278,10 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 | `place_devices` | **批量**放置（库器件或内置件，自动排版+图框约束） | placements[] |
 | `place_part` | 内置 R/C/L/D/LED/SW/Q_NPN/Q_PNP/M_NMOS/M_PMOS/XTAL/连接器/通用件 | part, x, y, value… |
 | `delete_components` | 删除元件或图元（按位号 / gId） | designators[], ids[] |
+| **`place`** | 放置元件（统一入口，一次多个；库器件或内置件，自动排版+编号） | items[] |
+| **`draw`** | 画导线 / 放网络标签（自动吸附到引脚或导线端点） | wires[], net_labels[] |
+| **`update_component`** | 批量改值 / 属性 / 位号 | edits[] |
+| `place_part` / `place_device` / `place_devices` / `create_wire` / `create_net_label` / `set_component_*` | 兼容保留，不再对模型暴露 | — |
 | `ask_user` | 一次提出多个问题并等待回答 | questions[{id,text,options[]}] |
 | `create_wire` | 画导线 | points[] |
 | `create_net_label` | 放网络标签 | x, y, name |

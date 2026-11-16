@@ -213,21 +213,92 @@
 	/* ------------------------------------------------------------ drawing -- */
 
 	/** Draws a wire through the given points. */
+	/** Placement grid (snap size, falling back to the visible grid). */
+	A.gridStep = function () {
+		try {
+			var c = EAI.eda.canvasInfo ? EAI.eda.canvasInfo() : {};
+			var s = Number(c.snapSize) || Number(c.gridSize) || 10;
+			return s > 0 ? s : 10;
+		} catch (e) { return 10; }
+	};
+
+	/** Every point a wire / net label can electrically attach to. */
+	A.electricalPoints = function (json) {
+		json = json || EAI.eda.activeJson() || {};
+		var pts = [];
+		Object.keys(json.schlib || {}).forEach(function (gid) {
+			if (/^frame/i.test(gid)) return;
+			var b = json.schlib[gid];
+			Object.keys(b.pin || {}).forEach(function (pid) {
+				var pd = b.pin[pid] && b.pin[pid].pinDot;
+				if (pd) pts.push({ x: Number(pd.x), y: Number(pd.y) });
+			});
+		});
+		Object.keys(json.wire || {}).forEach(function (wid) {
+			var pa = (json.wire[wid] && json.wire[wid].pointArr) || [];
+			if (!pa.length) return;
+			pts.push({ x: Number(pa[0].x), y: Number(pa[0].y) });
+			var last = pa[pa.length - 1];
+			pts.push({ x: Number(last.x), y: Number(last.y) });
+		});
+		Object.keys(json.netlabel || {}).forEach(function (nid) {
+			var n = json.netlabel[nid] || {};
+			var p = n.pinDot || n;
+			if (p && isFinite(Number(p.x))) pts.push({ x: Number(p.x), y: Number(p.y) });
+		});
+		return pts;
+	};
+
+	/** Nearest electrical point within tol (Manhattan distance). */
+	A.snapPoint = function (x, y, tol) {
+		var pts = A.electricalPoints();
+		var best = null, bd = Infinity;
+		pts.forEach(function (p) {
+			if (!isFinite(p.x) || !isFinite(p.y)) return;
+			var d = Math.abs(p.x - x) + Math.abs(p.y - y);
+			if (d < bd) { bd = d; best = p; }
+		});
+		if (best && bd <= (tol || 0)) return { x: best.x, y: best.y, snapped: true, dist: bd };
+		return { x: x, y: y, snapped: false };
+	};
+
+	/** Rounds a value to the placement grid. */
+	A.gridSnap = function (v, step) {
+		step = step || A.gridStep();
+		return Math.round(Number(v) / step) * step;
+	};
+
 	A.createWire = function (points, style) {
 		if (!points || points.length < 2) return { ok: false, error: 'a wire needs at least two points' };
 		style = style || {};
+		var step = A.gridStep();
+		points = points.map(function (p) {
+			var s = A.snapPoint(p.x, p.y, step * 1.2);
+			return { x: s.x, y: s.y };
+		});
+		/* wire geometry lives in pointArr of the jsonCache — the flat
+		   `points` parameter is ignored by createShape for wires */
 		EAI.api('createShape', {
 			shapeType: 'wire',
-			points: points.map(function (p) { return { x: p.x, y: p.y }; }),
-			stroke: style.stroke || '#008800',
-			'stroke-width': style.width || 1,
-			'stroke-style': style.style || ''
+			jsonCache: {
+				gId: newId('gge'),
+				pointArr: points.map(function (p) { return { x: p.x, y: p.y }; }),
+				strokeColor: style.stroke || '#008800',
+				strokeWidth: style.width || 1,
+				strokeStyle: style.style || '',
+				locked: false
+			}
 		});
-		return { ok: true, points: points.length };
+		return { ok: true, points: points.length, first: points[0], last: points[points.length - 1] };
 	};
 
 	/** Places a net label (the named anchor of a net). */
 	A.createNetLabel = function (x, y, name, rotation) {
+		var step = A.gridStep();
+		var sn = A.snapPoint(x, y, step * 1.2);
+		if (!sn.snapped) { sn = { x: A.gridSnap(x, step), y: A.gridSnap(y, step) }; }
+		x = sn.x;
+		y = sn.y;
 		var cache = {
 			gId: newId('netlabel'),
 			x: x, y: y,
@@ -859,6 +930,36 @@
 				package: spec.package, pre: spec.pre
 			});
 			if (!block) return { ok: false, error: 'template build failed' };
+
+			/* put the first pin exactly on the placement grid */
+			var step = A.gridStep();
+			var pids0 = Object.keys(block.pin || {});
+			if (pids0.length) {
+				var pd0 = block.pin[pids0[0]].pinDot || {};
+				var px0 = Number(pd0.x), py0 = Number(pd0.y);
+				if (isFinite(px0) && isFinite(py0)) {
+					var adjX = A.gridSnap(px0, step) - px0;
+					var adjY = A.gridSnap(py0, step) - py0;
+					if (adjX || adjY) {
+						pos.x += adjX;
+						pos.y += adjY;
+						block = EAI.parts.build(tpl, {
+							x: pos.x, y: pos.y, rotation: spec.rotation || 0,
+							designator: spec.designator, name: spec.name, value: spec.value,
+							package: spec.package, pre: spec.pre
+						});
+					}
+				}
+			}
+			var pins = Object.keys(block.pin || {}).map(function (pid) {
+				var p = block.pin[pid];
+				return {
+					number: (p.num && p.num.text) || '',
+					name: (p.name && p.name.text) || '',
+					x: Number(p.pinDot && p.pinDot.x),
+					y: Number(p.pinDot && p.pinDot.y)
+				};
+			});
 			try {
 				/* the block already carries absolute coordinates — passing x/y
 				   again would translate it twice (parts landed outside the frame) */
@@ -876,7 +977,7 @@
 			return {
 				ok: true, gId: block.head.gId, x: pos.x, y: pos.y,
 				part: spec.part, clamped: pos.clamped,
-				designator: spec.designator || ''
+				designator: spec.designator || '', pins: pins
 			};
 		}
 
@@ -894,6 +995,13 @@
 		}
 		sym.x = pos.x;
 		sym.y = pos.y;
+		var step2 = A.gridStep();
+		if (sym.pins && sym.pins.length) {
+			var q0 = sym.pins[0];
+			var wx = sym.x + Number(q0.x || 0), wy = sym.y + Number(q0.y || 0);
+			sym.x += A.gridSnap(wx, step2) - wx;
+			sym.y += A.gridSnap(wy, step2) - wy;
+		}
 		sym.rotation = spec.rotation || 0;
 		sym.package = spec.package || sym.package;
 		if (spec.name) sym.name = spec.name;
@@ -907,9 +1015,17 @@
 			package: spec.package, designator: spec.designator
 		});
 		if (spec.designator) A.setComponentDesignator(res.gId, spec.designator);
+		var fpins = (sym.pins || []).map(function (p) {
+			return {
+				number: p.number,
+				name: p.name,
+				x: sym.x + Number(p.dotX === undefined ? p.x : (p.dotX - 0)) ,
+				y: sym.y + Number(p.dotY === undefined ? p.y : (p.dotY - 0))
+			};
+		});
 		return {
 			ok: true, gId: res.gId, x: sym.x, y: sym.y, part: spec.part,
-			clamped: pos.clamped, designator: spec.designator || ''
+			clamped: pos.clamped, designator: spec.designator || '', pins: fpins
 		};
 	};
 

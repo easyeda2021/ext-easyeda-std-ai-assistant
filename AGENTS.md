@@ -35,7 +35,8 @@ extension/ui-report.js   报告卡片、报告预览、日志窗口
 extension/ui-settings.js 设置弹窗（供应商与模型 / 生成参数 / 诊断）
 extension/ui-about.js    关于弹窗（含项目地址）
 extension/main.js        引导：菜单、工具栏按钮、命令
-tools/pack.js            构建：版本自增 → dist/<project>-v<ver>/ + .zip（自带 zip 实现，无依赖）
+tools/pack.js            构建：版本自增 → 合并脚本为 app.js → dist/<project>-v<ver>/ + .zip
+                         （每次构建清空 dist；--no-bundle 可保留分文件）
 .github/workflows/       手动触发的构建与 Release
 ```
 

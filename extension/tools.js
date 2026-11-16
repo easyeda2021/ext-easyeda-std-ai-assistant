@@ -124,6 +124,8 @@
 				};
 				if (kind === 'sch') {
 					var comps = D.components(json);
+					info.grid = D.canvasInfo ? D.canvasInfo(json) : null;
+					try { info.bounds = EAI.actions.sheetBounds(); } catch (e) { /* ignore */ }
 					info.componentCount = comps.length;
 					info.wireCount = json && json.wire ? Object.keys(json.wire).length : 0;
 					info.netLabelCount = json && json.netlabel ? Object.keys(json.netlabel).length : 0;
@@ -577,7 +579,9 @@
 		/* ---------------------------------------------------------------- */
 		{
 			name: 'create_wire',
-			description: 'Draw a wire through a list of points on the schematic.',
+			description: 'Draw a wire through a list of points on the schematic. Endpoints snap to ' +
+				'nearby pins / wire ends automatically, so passing approximate coordinates ' +
+				'is fine.',
 			parameters: P.obj({
 				points: {
 					type: 'array',
@@ -596,7 +600,8 @@
 		/* ---------------------------------------------------------------- */
 		{
 			name: 'create_net_label',
-			description: 'Place a net label (a named electrical anchor) on the schematic.',
+			description: 'Place a net label (a named electrical anchor) on the schematic. The anchor ' +
+				'snaps to a nearby pin / wire end, otherwise to the placement grid.',
 			parameters: P.obj({
 				x: P.num('x position'),
 				y: P.num('y position'),
@@ -764,7 +769,11 @@
 					if (r && r.ok) {
 						placed++;
 						if (r.clamped) clamped++;
-						lines.push('✓ ' + name + ' @' + r.x + ',' + r.y);
+						var pinTxt = (r.pins || []).slice(0, 8).map(function (p) {
+							return p.number + '@' + p.x + ',' + p.y;
+						}).join('  ');
+						lines.push('✓ ' + name + ' @' + r.x + ',' + r.y +
+							(pinTxt ? '  pins: ' + pinTxt : ''));
 					} else {
 						failed++;
 						lines.push('✗ ' + name + ' — ' + ((r && r.error) || 'unknown error'));
@@ -866,6 +875,140 @@
 		}
 	];
 
+	/* ------------------------------------------------- unified surface -- */
+
+	/*
+	 * A smaller, CRUD-shaped surface is easier for the model than one tool per
+	 * action.  The specific tools above stay registered for compatibility,
+	 * but only these are advertised.
+	 */
+	T.defs.push({
+		name: 'place',
+		description:
+			'Place components (one call, many parts). Each item is either a REAL ' +
+			'library part (uuid from search_library) or a built-in key ' +
+			'(R/C/L/D/LED/Q_NPN/Q_PNP/M_NMOS/M_PMOS/SW/CONN2/CONN3/CONN4/HDR2X2/HDR2X3/' +
+			'XTAL/XTAL4/C_TAN/GENERIC). Omit x/y for automatic layout inside the ' +
+			'sheet frame; pins are grid-aligned and the result lists every pin ' +
+			'coordinate (pins: 1@x,y …) — use those coordinates with draw().',
+		parameters: P.obj({
+			items: {
+				type: 'array',
+				description: 'Components to place',
+				items: P.obj({
+					part: P.str('Built-in key (omit when uuid is given)'),
+					uuid: P.str('Library uuid from search_library'),
+					docType: P.str('Library docType (default "2")'),
+					x: P.num('Optional x; omit for auto layout'),
+					y: P.num('Optional y; omit for auto layout'),
+					rotation: P.num('0 / 90 / 180 / 270'),
+					value: P.str('Value text'),
+					name: P.str('Part number / name (GENERIC, XTAL)'),
+					pre: P.str('Designator prefix letter'),
+					designator: P.str('Optional explicit designator'),
+					package: P.str('Package override'),
+					pinCount: P.num('GENERIC only'),
+					pinNames: {
+						type: 'array',
+						description: 'GENERIC only: pin names in order',
+						items: P.str('pin name')
+					}
+				})
+			},
+			autoLayout: { type: 'boolean', description: 'Grid layout for items without x/y (default true)' }
+		}, ['items']),
+		run: function (args) {
+			args = args || {};
+			return T.byName.place_devices.run({ placements: args.items || [], autoLayout: args.autoLayout });
+		}
+	});
+
+	T.defs.push({
+		name: 'draw',
+		description:
+			'Draw wires and net labels in one call. Endpoints snap to nearby pins ' +
+			'or wire ends automatically, so approximate coordinates are acceptable. ' +
+			'Use the pin coordinates returned by place().',
+		parameters: P.obj({
+			wires: {
+				type: 'array',
+				description: 'Polylines: [{points:[{x,y},{x,y},…]}, …]',
+				items: P.obj({
+					points: {
+						type: 'array',
+						items: P.obj({ x: P.num('x'), y: P.num('y') }, ['x', 'y'])
+					}
+				}, ['points'])
+			},
+			net_labels: {
+				type: 'array',
+				description: 'Net labels: [{x, y, name}]',
+				items: P.obj({
+					x: P.num('x'), y: P.num('y'), name: P.str('net name')
+				}, ['x', 'y', 'name'])
+			}
+		}),
+		run: function (args) {
+			var err = need(['sch']);
+			if (err) return err;
+			var out = [], i;
+			(args.wires || []).forEach(function (w) {
+				var r = A.createWire(w.points);
+				out.push(r.ok ? ('wire ✓ (' + r.points + ' pts)') : ('wire ✗ ' + r.error));
+			});
+			(args.net_labels || []).forEach(function (n) {
+				var r = A.createNetLabel(n.x, n.y, n.name, n.rotation);
+				out.push(r.ok ? ('label ✓ ' + n.name + ' @' + r.x + ',' + r.y)
+					: ('label ✗ ' + r.error));
+			});
+			if (!out.length) return '没有给出要绘制的图元。';
+			return out.join('\n');
+		}
+	});
+
+	T.defs.push({
+		name: 'update_component',
+		description:
+			'Update one or more components in one call: value / any c_para key / ' +
+			'designator. Each edit is {designator, value?, parameter?, params?, newDesignator?}.',
+		parameters: P.obj({
+			edits: {
+				type: 'array',
+				items: P.obj({
+					designator: P.str('current designator, e.g. R1'),
+					value: P.str('new value text'),
+					parameter: P.str('c_para key to change (default "value")'),
+					params: P.obj({}, []),
+					newDesignator: P.str('rename to this designator')
+				}, ['designator'])
+			}
+		}, ['edits']),
+		run: function (args) {
+			var err = need(['sch', 'schlib']);
+			if (err) return err;
+			var lines = [];
+			(args.edits || []).forEach(function (e) {
+				if (!e || !e.designator) return;
+				if (e.newDesignator) {
+					var r0 = A.setComponentDesignator(e.designator, e.newDesignator);
+					lines.push(r0.ok ? ('rename ✓ ' + e.designator + ' → ' + e.newDesignator)
+						: ('rename ✗ ' + e.designator + ': ' + r0.error));
+				}
+				if (e.value || e.parameter) {
+					var r1 = A.setComponentValue(e.designator, e.value, e.parameter);
+					lines.push(r1.ok ? ('value ✓ ' + e.designator + ' ' + (e.parameter || 'value') +
+						'=' + e.value) : ('value ✗ ' + e.designator + ': ' + r1.error));
+				}
+				if (e.params && Object.keys(e.params).length) {
+					var r2 = A.setComponentParams(e.designator, e.params);
+					lines.push(r2.ok ? ('params ✓ ' + e.designator)
+						: ('params ✗ ' + e.designator + ': ' + r2.error));
+				}
+			});
+			return lines.length ? lines.join('\n') : '没有要修改的内容。';
+		}
+	});
+
 	/* ---------------------------------------------------------- registry -- */
 
 	T.byName = {};
@@ -882,11 +1025,9 @@
 	T.available = function () {
 		var kind = EAI.eda.docKind();
 		var READ = ['get_document_info', 'capture_image', 'locate_component'];
-		var SCH = ['get_components', 'get_netlist', 'get_bom', 'set_component_value',
-			'set_component_designator', 'audit_components', 'set_component_params',
-			'delete_components',
-			'search_library', 'place_device', 'place_devices',
-			'place_part', 'create_wire', 'create_net_label', 'create_symbol', 'ask_user'];
+		var SCH = ['get_components', 'get_netlist', 'get_bom', 'audit_components',
+			'delete_components', 'update_component',
+			'search_library', 'place', 'draw', 'create_symbol', 'ask_user'];
 		var PCB = ['get_pcb_info', 'get_components', 'delete_components'];
 
 		var allow = READ.slice();
