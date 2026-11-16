@@ -39,6 +39,7 @@
 			'7. create_symbol 一次调用就会画好矩形框、逐个引脚与 c_para 属性，' +
 			'调用后不要再截图核对或反复修正。',
 			'8. 画原理图时必须优先用系统库：先 search_library 搜型号，命中就用 place 放置；' +
+			'命中后直接放置，不要删除重放、也不要用 create_symbol 转换；' +
 			'只有系统库没有时，才用 create_symbol 凭你的知识' +
 			'生成符号（给出符号名、引脚编号、引脚名称）并直接放到画布。',
 			'9. 任务中如有需要用户确认的信息（电压、具体型号、封装、脚位等），必须用 ' +
@@ -110,6 +111,8 @@
 			'③ 常用器件直接用内置模板，不需要查库（place 的 part 键名见系统提示里的内置器件清单：' +
 			'R/C/L/D/LED/Q_NPN/Q_PNP/M_NMOS/M_PMOS/SW/CONN2/CONN3/CONN4/HDR2X2/HDR2X3/C_TAN）；' +
 			'④ 其余器件用 search_library **批量**检索：把多个型号放进 queries 数组，' +
+			'命中后**直接用 place 传 uuid 放置**（返回真实位号与引脚），' +
+			'不要删除重放、也不要用 create_symbol 把库器件“再转换一次”；' +
 			'一次调用查完，不要一个型号调用一次；' +
 			'⑤ 放置统一用 place 一次批量完成：库器件给 uuid，内置器件给 part，' +
 			'通用 IC 用 part:"GENERIC" 并给 name、pinCount、pinNames（按引脚顺序）；' +

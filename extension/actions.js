@@ -922,6 +922,13 @@
 		var uuid = String((spec && spec.uuid) || '').trim();
 		if (!uuid) return { ok: false, error: 'uuid is required' };
 		var pos = A.clampToSheet(spec.x, spec.y);
+
+		var before = {};
+		try {
+			var j0 = EAI.api('getSource', { type: 'json' }) || {};
+			Object.keys(j0.schlib || {}).forEach(function (k) { before[k] = 1; });
+		} catch (e) { /* ignore */ }
+
 		try {
 			EAI.api('createShape', {
 				shapeType: 'schlib',
@@ -933,7 +940,120 @@
 		} catch (e) {
 			return { ok: false, error: 'createShape failed: ' + e };
 		}
-		return { ok: true, x: pos.x, y: pos.y, clamped: pos.clamped };
+
+		/* find the block that just appeared and report it back, so the model
+		   never needs to "re-create" a library part */
+		var gId = null, pins = [], designator = '', prefix = 'U';
+		try {
+			var j1 = EAI.api('getSource', { type: 'json' }) || {};
+			Object.keys(j1.schlib || {}).forEach(function (k) {
+				if (!before[k] && !gId) gId = k;
+			});
+			if (gId) {
+				var shape = EAI.api('getShape', { id: gId, cmdKey: 'schlib' });
+				var cp = String((shape && shape.head && shape.head.c_para) || '');
+				var m = /(?:^|`)pre`([^`]*)`/.exec(cp) || /spicePre`([^`]*)`/.exec(cp);
+				if (m && m[1]) prefix = m[1];
+				pins = Object.keys((shape && shape.pin) || {}).map(function (pid) {
+					var p = shape.pin[pid];
+					return {
+						number: (p.num && p.num.text) || '',
+						name: (p.name && p.name.text) || '',
+						x: Number(p.pinDot && p.pinDot.x),
+						y: Number(p.pinDot && p.pinDot.y)
+					};
+				});
+				var pAnn = Object.keys((shape && shape.annotation) || {}).map(function (k) {
+					return shape.annotation[k];
+				}).filter(function (a) { return a && a.mark === 'P'; })[0];
+				designator = (pAnn && pAnn.string) || '';
+			}
+		} catch (e) { /* ignore */ }
+
+		return {
+			ok: true, x: pos.x, y: pos.y, clamped: pos.clamped, uuid: uuid,
+			gId: gId, pins: pins, designator: designator, prefix: prefix
+		};
+	};
+
+	/**
+	 * Like placeDevice, but the editor adds a library part asynchronously, so
+	 * this polls the document until the new block shows up (max ~2 s) and then
+	 * reports its designator / pins.
+	 */
+	A.placeDeviceAsync = function (spec) {
+		spec = spec || {};
+		var uuid = String(spec.uuid || '').trim();
+		if (!uuid) return Promise.resolve({ ok: false, error: 'uuid is required' });
+		var pos = A.clampToSheet(spec.x, spec.y);
+
+		function fresh() {
+			try { return EAI.api('getSource', { type: 'json' }) || {}; }
+			catch (e) { return {}; }
+		}
+
+		var before = {};
+		var j0 = fresh();
+		Object.keys(j0.schlib || {}).forEach(function (k) { before[k] = 1; });
+
+		try {
+			EAI.api('createShape', {
+				shapeType: 'schlib',
+				uuid: uuid,
+				docType: String(spec.docType || '2'),
+				x: pos.x, y: pos.y,
+				rotation: Number(spec.rotation) || 0
+			});
+		} catch (e) {
+			return Promise.resolve({ ok: false, error: 'createShape failed: ' + e });
+		}
+
+		return new Promise(function (resolve) {
+			var tries = 0;
+
+			function findNew() {
+				var j = fresh(), gid = null;
+				Object.keys(j.schlib || {}).forEach(function (k) {
+					if (!before[k] && !gid) gid = k;
+				});
+				return gid;
+			}
+
+			function finish(gid) {
+				var out = {
+					ok: true, x: pos.x, y: pos.y, clamped: pos.clamped, uuid: uuid,
+					gId: gid, pins: [], designator: '', prefix: 'U'
+				};
+				if (gid) {
+					try {
+						var shape = EAI.api('getShape', { id: gid, cmdKey: 'schlib' });
+						var cp = String((shape && shape.head && shape.head.c_para) || '');
+						var m = /(?:^|`)pre`([^`]*)`/.exec(cp) || /spicePre`([^`]*)`/.exec(cp);
+						if (m && m[1]) out.prefix = m[1];
+						out.pins = Object.keys((shape && shape.pin) || {}).map(function (pid) {
+							var p = shape.pin[pid];
+							return {
+								number: (p.num && p.num.text) || '',
+								name: (p.name && p.name.text) || '',
+								x: Number(p.pinDot && p.pinDot.x),
+								y: Number(p.pinDot && p.pinDot.y)
+							};
+						});
+						var pAnn = Object.keys((shape && shape.annotation) || {}).map(function (k) {
+							return shape.annotation[k];
+						}).filter(function (a) { return a && a.mark === 'P'; })[0];
+						out.designator = (pAnn && pAnn.string) || '';
+					} catch (e) { /* ignore */ }
+				}
+				resolve(out);
+			}
+
+			(function poll() {
+				var gid = findNew();
+				if (gid || tries++ >= 20) { finish(gid); return; }
+				setTimeout(poll, 100);
+			})();
+		});
 	};
 
 	A.placePart = function (spec) {

@@ -840,48 +840,87 @@
 				var used = {};   /* designators already handed out in this batch */
 				var lines = [];
 
+				var chain = Promise.resolve();
 				list.slice(0, 300).forEach(function (item) {
-					var x = item.x, y = item.y;
-					if (auto && (x === undefined || y === undefined || x === null || y === null)) {
-						x = b.minX + 40 + (col % perRow) * 110;
-						y = b.minY + 40 + row * 90;
-						col++;
-						if (col % perRow === 0) row++;
-					}
-					var r;
-					if (item.uuid) {
-						r = A.placeDevice({
-							uuid: item.uuid, docType: item.docType,
-							x: x, y: y, rotation: item.rotation
+					chain = chain.then(function () {
+						var x = item.x, y = item.y;
+						if (auto && (x === undefined || y === undefined || x === null || y === null)) {
+							x = b.minX + 40 + (col % perRow) * 110;
+							y = b.minY + 40 + row * 90;
+							col++;
+							if (col % perRow === 0) row++;
+						}
+
+						var task;
+						if (item.uuid) {
+							/* the editor inserts library parts asynchronously */
+							task = A.placeDeviceAsync({
+								uuid: item.uuid, docType: item.docType,
+								x: x, y: y, rotation: item.rotation
+							}).then(function (r) {
+								if (r && r.ok && r.gId) {
+									var dUuid = item.designator ||
+										A.nextDesignator(r.prefix || 'U', used);
+									A.applyTemplateMeta(r.gId, {
+										pre: r.prefix, value: item.value, name: item.name,
+										package: item.package, designator: dUuid
+									});
+									r.designator = dUuid;
+									/* keep the first pin on the placement grid */
+									var aligned = A.gridAlignComponent(r.gId, A.gridStep());
+									if (aligned && aligned.pin) {
+										r.pins = Object.keys(aligned.pin).map(function (pid) {
+											var pp = aligned.pin[pid];
+											return {
+												number: (pp.num && pp.num.text) || '',
+												name: (pp.name && pp.name.text) || '',
+												x: Number(pp.pinDot && pp.pinDot.x),
+												y: Number(pp.pinDot && pp.pinDot.y)
+											};
+										});
+										if (aligned.head) {
+											r.x = Number(aligned.head.x);
+											r.y = Number(aligned.head.y);
+										}
+									}
+								}
+								return r;
+							});
+						} else {
+							task = Promise.resolve(A.placePart({
+								part: item.part || 'R', x: x, y: y,
+								rotation: item.rotation, value: item.value,
+								name: item.name, pre: item.pre,
+								designator: item.designator, package: item.package,
+								pinCount: item.pinCount, pinNames: item.pinNames,
+								used: used
+							}));
+						}
+
+						return task.then(function (r) {
+							var name = (r && r.designator) || item.designator ||
+								item.part || item.uuid || '?';
+							if (r && r.ok) {
+								placed++;
+								if (r.clamped) clamped++;
+								var pinTxt = (r.pins || []).slice(0, 8).map(function (p) {
+									return p.number + '@' + p.x + ',' + p.y;
+								}).join('  ');
+								lines.push('✓ ' + name + ' @' + r.x + ',' + r.y +
+									(pinTxt ? '  pins: ' + pinTxt : ''));
+							} else {
+								failed++;
+								lines.push('✗ ' + name + ' — ' + ((r && r.error) || 'unknown error'));
+							}
 						});
-					} else {
-						r = A.placePart({
-							part: item.part || 'R', x: x, y: y,
-							rotation: item.rotation, value: item.value,
-							name: item.name, pre: item.pre,
-							designator: item.designator, package: item.package,
-							pinCount: item.pinCount, pinNames: item.pinNames,
-							used: used
-						});
-					}
-					var name = (r && r.designator) || item.designator || item.part || item.uuid || '?';
-					if (r && r.ok) {
-						placed++;
-						if (r.clamped) clamped++;
-						var pinTxt = (r.pins || []).slice(0, 8).map(function (p) {
-							return p.number + '@' + p.x + ',' + p.y;
-						}).join('  ');
-						lines.push('✓ ' + name + ' @' + r.x + ',' + r.y +
-							(pinTxt ? '  pins: ' + pinTxt : ''));
-					} else {
-						failed++;
-						lines.push('✗ ' + name + ' — ' + ((r && r.error) || 'unknown error'));
-					}
+					});
 				});
 
-				return '已放置 ' + placed + ' 个（失败 ' + failed + '，贴边修正 ' + clamped + '）\n' +
-					lines.slice(0, 200).join('\n') +
-					(list.length > 300 ? '\n（超过 300 个，已截断）' : '');
+				return chain.then(function () {
+					return '已放置 ' + placed + ' 个（失败 ' + failed + '，贴边修正 ' + clamped + '）\n' +
+						lines.slice(0, 200).join('\n') +
+						(list.length > 300 ? '\n（超过 300 个，已截断）' : '');
+				});
 			}
 		},
 
