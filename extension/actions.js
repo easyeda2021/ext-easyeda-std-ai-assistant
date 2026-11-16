@@ -511,8 +511,8 @@
 			EAI.api('createShape', {
 				shapeType: 'schlib',
 				jsonCache: block,
-				x: originX, y: originY,
-				rotation: spec.rotation || 0
+				x: 0, y: 0,
+				rotation: 0
 			});
 		} catch (e) {
 			return { ok: false, error: 'importing the symbol failed: ' + e };
@@ -692,6 +692,53 @@
 		return { x: nx, y: ny, clamped: nx !== Number(x) || ny !== Number(y) };
 	};
 
+	/**
+	 * createShape() re-imports a jsonCache block and rebuilds its designator /
+	 * value annotations from library defaults, so the designator prefix and
+	 * value must be written back afterwards with updateShape().
+	 */
+	A.applyTemplateMeta = function (gId, opts) {
+		opts = opts || {};
+		var pre = String(opts.pre || 'U').replace(/\?+$/, '') || 'U';
+		var shape = null;
+		try { shape = EAI.api('getShape', { id: gId, cmdKey: 'schlib' }); }
+		catch (e) { return false; }
+		if (!shape || !shape.head) return false;
+
+		var cp = shape.head.c_para || '';
+		cp = A.setCParaParam(cp, 'pre', pre);
+		if (opts.value) {
+			cp = A.setCParaParam(cp, 'value', opts.value);
+			/* the library may store the value under a decorated key */
+			var segs = cp.split('`');
+			for (var i = 0; i + 1 < segs.length; i += 2) {
+				if (/^value\(/.test(segs[i])) segs[i + 1] = String(opts.value);
+			}
+			cp = segs.join('`');
+		}
+		if (opts.package) cp = A.setCParaParam(cp, 'package', opts.package);
+
+		var annPatch = {};
+		Object.keys(shape.annotation || {}).forEach(function (id) {
+			var a = shape.annotation[id];
+			if (!a) return;
+			if (a.mark === 'P') annPatch[id] = { string: opts.designator || (pre + '?') };
+			else if (a.mark === 'N' && (opts.value || opts.name)) {
+				annPatch[id] = { string: String(opts.value || opts.name) };
+			}
+		});
+
+		try {
+			EAI.api('updateShape', {
+				shapeType: 'schlib',
+				jsonCache: { gId: gId, head: { c_para: cp }, annotation: annPatch }
+			});
+			return true;
+		} catch (e) {
+			return false;
+		}
+	};
+
 	/** Places one REAL library device (uuid from search_library). */
 	A.placeDevice = function (spec) {
 		var uuid = String((spec && spec.uuid) || '').trim();
@@ -724,13 +771,19 @@
 			});
 			if (!block) return { ok: false, error: 'template build failed' };
 			try {
+				/* the block already carries absolute coordinates — passing x/y
+				   again would translate it twice (parts landed outside the frame) */
 				EAI.api('createShape', {
 					shapeType: 'schlib', jsonCache: block,
-					x: pos.x, y: pos.y, rotation: spec.rotation || 0
+					x: 0, y: 0, rotation: 0
 				});
 			} catch (e) {
 				return { ok: false, error: 'importing the symbol failed: ' + e };
 			}
+			A.applyTemplateMeta(block.head.gId, {
+				pre: tpl.pre, value: spec.value, name: spec.name,
+				package: spec.package, designator: spec.designator
+			});
 			return {
 				ok: true, gId: block.head.gId, x: pos.x, y: pos.y,
 				part: spec.part, clamped: pos.clamped,
@@ -743,7 +796,9 @@
 		if (!lib) return { ok: false, error: 'unknown part "' + spec.part + '"' };
 		var sym = U.clone(lib);
 		if (!sym.pins.length && spec.pinCount) {
-			sym = A.genericSymbol(spec.pinCount, { name: spec.name, pre: spec.pre });
+			sym = A.genericSymbol(spec.pinCount, {
+				name: spec.name, pre: spec.pre, pinNames: spec.pinNames
+			});
 		}
 		sym.x = pos.x;
 		sym.y = pos.y;
@@ -755,6 +810,10 @@
 		var res = A.createSymbol(sym);
 		if (!res.ok) return res;
 
+		A.applyTemplateMeta(res.gId, {
+			pre: sym.pre || spec.pre, value: spec.value, name: spec.name,
+			package: spec.package, designator: spec.designator
+		});
 		if (spec.designator) A.setComponentDesignator(res.gId, spec.designator);
 		return {
 			ok: true, gId: res.gId, x: sym.x, y: sym.y, part: spec.part,

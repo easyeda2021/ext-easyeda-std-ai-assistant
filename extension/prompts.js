@@ -106,7 +106,8 @@
 			'R/C/L/D/LED/Q_NPN/Q_PNP/M_NMOS/M_PMOS/SW/CONN2/CONN3/CONN4/HDR2X2/HDR2X3/C_TAN）；' +
 			'④ 其余器件用 search_library **批量**检索：把多个型号放进 queries 数组，' +
 			'一次调用查完，不要一个型号调用一次；' +
-			'⑤ 放置统一用 place_devices 一次批量完成：库器件给 uuid，内置器件给 part；' +
+			'⑤ 放置统一用 place_devices 一次批量完成：库器件给 uuid，内置器件给 part，' +
+			'通用 IC 用 part:"GENERIC" 并给 name、pinCount、pinNames（按引脚顺序）；' +
 			'不传 x/y 时会自动在图框内排版，任何越界坐标都会被夹回图框内；' +
 			'⑥ 只有系统库确实没有时才用 create_symbol 现场画符号（一次画完，不要截图核对）；' +
 			'⑦ 最后用 create_wire / create_net_label 连线并命名网络。' +

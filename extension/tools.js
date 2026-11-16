@@ -525,7 +525,12 @@
 				pre: P.str('Designator prefix letter, e.g. U (the ? is added automatically)'),
 				designator: P.str('Optional explicit designator (usually leave empty: the editor numbers it)'),
 				package: P.str('Optional package override, e.g. 0603'),
-				pinCount: P.num('Pin count, only for GENERIC')
+				pinCount: P.num('Pin count, only for GENERIC'),
+				pinNames: {
+					type: 'array',
+					description: 'Pin names in pin order, only for GENERIC (e.g. ["OUT","IN-","IN+","GND"])',
+					items: P.str('pin name')
+				}
 			}, ['part', 'x', 'y']),
 			run: function (args) {
 				var err = need(['sch']);
@@ -676,7 +681,12 @@
 						pre: P.str('Designator prefix letter, e.g. U'),
 						designator: P.str('Designator, e.g. R1 (usually omit: the editor numbers it)'),
 						package: P.str('Package override'),
-						pinCount: P.num('Pin count, only for GENERIC')
+						pinCount: P.num('Pin count, only for GENERIC'),
+						pinNames: {
+							type: 'array',
+							description: 'Pin names in pin order, GENERIC only',
+							items: P.str('pin name')
+						}
 					})
 				},
 				autoLayout: { type: 'boolean', description: 'Grid-layout the ones without x/y (default true)' }
@@ -713,7 +723,7 @@
 							rotation: item.rotation, value: item.value,
 							name: item.name, pre: item.pre,
 							designator: item.designator, package: item.package,
-							pinCount: item.pinCount
+							pinCount: item.pinCount, pinNames: item.pinNames
 						});
 					}
 					var name = item.designator || item.part || item.uuid || '?';

@@ -496,6 +496,8 @@
 		h.x = X;
 		h.y = Y;
 		h.rotation = ROT ? ROT : 0;
+		/* designator prefix: the editor numbers each pre independently */
+		h.c_para = setPara(h.c_para, 'pre', pre);
 		if (opts.package) h.c_para = setPara(h.c_para, 'package', opts.package);
 		if (opts.value) {
 			h.c_para = setPara(h.c_para, 'value', opts.value);
