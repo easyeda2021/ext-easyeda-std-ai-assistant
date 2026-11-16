@@ -262,6 +262,28 @@
 		return { x: x, y: y, snapped: false };
 	};
 
+	/**
+	 * createShape() can shift an imported block by a few units, which drops
+	 * the pins off the grid again — nudge the placed component by the residual
+	 * and return the refreshed shape.
+	 */
+	A.gridAlignComponent = function (gId, step) {
+		step = step || A.gridStep();
+		try {
+			var s = EAI.api('getShape', { id: gId, cmdKey: 'schlib' });
+			var ids = Object.keys((s && s.pin) || {});
+			if (!ids.length) return s;
+			var pd = s.pin[ids[0]].pinDot || {};
+			var dx = A.gridSnap(pd.x, step) - Number(pd.x);
+			var dy = A.gridSnap(pd.y, step) - Number(pd.y);
+			if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
+				EAI.api('moveObjs', { objs: [gId], addX: dx, addY: dy });
+				s = EAI.api('getShape', { id: gId, cmdKey: 'schlib' });
+			}
+			return s;
+		} catch (e) { return null; }
+	};
+
 	/** Rounds a value to the placement grid. */
 	A.gridSnap = function (v, step) {
 		step = step || A.gridStep();
@@ -974,6 +996,19 @@
 				pre: tpl.pre, value: spec.value, name: spec.name,
 				package: spec.package, designator: spec.designator
 			});
+			var aligned = A.gridAlignComponent(block.head.gId, step);
+			if (aligned && aligned.pin) {
+				pins = Object.keys(aligned.pin).map(function (pid) {
+					var pp = aligned.pin[pid];
+					return {
+						number: (pp.num && pp.num.text) || '',
+						name: (pp.name && pp.name.text) || '',
+						x: Number(pp.pinDot && pp.pinDot.x),
+						y: Number(pp.pinDot && pp.pinDot.y)
+					};
+				});
+				if (aligned.head) { pos.x = Number(aligned.head.x); pos.y = Number(aligned.head.y); }
+			}
 			return {
 				ok: true, gId: block.head.gId, x: pos.x, y: pos.y,
 				part: spec.part, clamped: pos.clamped,
@@ -1015,14 +1050,28 @@
 			package: spec.package, designator: spec.designator
 		});
 		if (spec.designator) A.setComponentDesignator(res.gId, spec.designator);
-		var fpins = (sym.pins || []).map(function (p) {
-			return {
-				number: p.number,
-				name: p.name,
-				x: sym.x + Number(p.dotX === undefined ? p.x : (p.dotX - 0)) ,
-				y: sym.y + Number(p.dotY === undefined ? p.y : (p.dotY - 0))
-			};
-		});
+		var alignedF = A.gridAlignComponent(res.gId, step2);
+		var fpins;
+		if (alignedF && alignedF.pin) {
+			fpins = Object.keys(alignedF.pin).map(function (pid) {
+				var pp = alignedF.pin[pid];
+				return {
+					number: (pp.num && pp.num.text) || '',
+					name: (pp.name && pp.name.text) || '',
+					x: Number(pp.pinDot && pp.pinDot.x),
+					y: Number(pp.pinDot && pp.pinDot.y)
+				};
+			});
+			if (alignedF.head) { sym.x = Number(alignedF.head.x); sym.y = Number(alignedF.head.y); }
+		} else {
+			fpins = (sym.pins || []).map(function (p) {
+				return {
+					number: p.number, name: p.name,
+					x: sym.x + Number(p.dotX === undefined ? p.x : p.dotX),
+					y: sym.y + Number(p.dotY === undefined ? p.y : p.dotY)
+				};
+			});
+		}
 		return {
 			ok: true, gId: res.gId, x: sym.x, y: sym.y, part: spec.part,
 			clamped: pos.clamped, designator: spec.designator || '', pins: fpins
