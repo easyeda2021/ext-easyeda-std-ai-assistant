@@ -111,6 +111,68 @@
 		return { ok: true, designator: designator, applied: patch };
 	};
 
+	/**
+	 * Deletes components / shapes by gId or designator.
+	 *
+	 * api('delete') does not remove jsonCache-imported blocks in practice, so
+	 * this rewrites the live document source instead (remove the entry from
+	 * its table and from itemOrder, then applySource).
+	 *
+	 * @param {Object} spec {ids:[gId], designators:['R1']}
+	 */
+	A.deleteShapes = function (spec) {
+		spec = spec || {};
+		var ids = Array.isArray(spec.ids) ? spec.ids.slice() : [];
+		var missing = [];
+
+		var json;
+		try { json = EAI.api('getSource', { type: 'json' }); }
+		catch (e) { return { ok: false, error: 'cannot read the document: ' + e, missing: missing }; }
+		if (!json) return { ok: false, error: 'empty document', missing: missing };
+
+		/* resolve designators against the fresh document, not the cached json */
+		(spec.designators || []).forEach(function (d) {
+			var hit = findComponent(json, String(d).trim());
+			if (hit) ids.push(hit.gId);
+			else missing.push(String(d).trim());
+		});
+		ids = ids.filter(function (v, i, a) { return !!v && a.indexOf(v) === i; });
+		if (!ids.length) return { ok: false, error: 'nothing to delete', missing: missing };
+
+		var TABLES = ['schlib', 'wire', 'bus', 'polyline', 'polygon', 'rect', 'ellipse',
+			'circle', 'path', 'arc', 'line', 'text', 'annotation', 'junction',
+			'netlabel', 'netflag', 'busentry', 'arrowhead', 'noconnectflag', 'image',
+			'FOOTPRINT', 'TRACK', 'COPPERAREA', 'SOLIDREGION', 'RECT', 'CIRCLE',
+			'TEXT', 'ARC', 'DIMENSION', 'PAD', 'VIA', 'HOLE', 'SVGNODE'];
+
+		var deleted = 0;
+		ids.forEach(function (id) {
+			var found = false;
+			TABLES.forEach(function (t) {
+				if (json[t] && Object.prototype.hasOwnProperty.call(json[t], id)) {
+					delete json[t][id];
+					found = true;
+				}
+			});
+			if (Array.isArray(json.itemOrder)) {
+				var before = json.itemOrder.length;
+				json.itemOrder = json.itemOrder.filter(function (x) { return x !== id; });
+				if (json.itemOrder.length !== before) found = true;
+			}
+			if (found) deleted++;
+			else missing.push(id);
+		});
+
+		if (!deleted) return { ok: false, error: 'ids not found in the document', missing: missing };
+
+		try {
+			EAI.api('applySource', { source: json, createNew: false });
+		} catch (e2) {
+			return { ok: false, error: 'applySource failed: ' + e2, missing: missing };
+		}
+		return { ok: true, deleted: deleted, ids: ids, missing: missing };
+	};
+
 	/** Renames a component (its designator / prefix). */
 	A.setComponentDesignator = function (designator, newDesignator) {
 		var json = EAI.eda.activeJson();
@@ -693,6 +755,29 @@
 	};
 
 	/**
+	 * Next free designator for a prefix (R, C, Q…).  API placement does not
+	 * number parts, so we scan the document (plus the current batch) and pick
+	 * the first unused number.
+	 */
+	A.nextDesignator = function (prefix, used) {
+		prefix = String(prefix || 'U').replace(/[^A-Za-z]/g, '') || 'U';
+		used = used || {};
+		var max = 0;
+		var comps = [];
+		try { comps = EAI.eda.components(EAI.eda.activeJson()) || []; }
+		catch (e) { comps = []; }
+		var re = new RegExp('^' + prefix + '(\d+)$');
+		comps.forEach(function (c) {
+			var m = re.exec(String(c.designator || ''));
+			if (m) max = Math.max(max, Number(m[1]));
+		});
+		var n = max + 1;
+		while (used[prefix + n]) n++;
+		used[prefix + n] = true;
+		return prefix + n;
+	};
+
+	/**
 	 * createShape() re-imports a jsonCache block and rebuilds its designator /
 	 * value annotations from library defaults, so the designator prefix and
 	 * value must be written back afterwards with updateShape().
@@ -764,6 +849,10 @@
 		/* 1) real library symbols (parts.js) — no parametric modelling */
 		var tpl = (EAI.parts && EAI.parts.get) ? EAI.parts.get(spec.part) : null;
 		if (tpl && tpl.raw) {
+			var preTpl = String(spec.pre || tpl.pre || 'U');
+			if (!spec.designator) {
+				spec.designator = A.nextDesignator(preTpl, spec.used);
+			}
 			var block = EAI.parts.build(tpl, {
 				x: pos.x, y: pos.y, rotation: spec.rotation || 0,
 				designator: spec.designator, name: spec.name, value: spec.value,
@@ -795,6 +884,9 @@
 		var lib = A.PARAM_LIB[(spec.part || '').toUpperCase()];
 		if (!lib) return { ok: false, error: 'unknown part "' + spec.part + '"' };
 		var sym = U.clone(lib);
+		if (!spec.designator) {
+			spec.designator = A.nextDesignator(spec.pre || sym.pre || 'U', spec.used);
+		}
 		if (!sym.pins.length && spec.pinCount) {
 			sym = A.genericSymbol(spec.pinCount, {
 				name: spec.name, pre: spec.pre, pinNames: spec.pinNames

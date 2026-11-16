@@ -544,6 +544,38 @@
 
 		/* ---------------------------------------------------------------- */
 		{
+			name: 'delete_components',
+			description:
+				'Delete components or shapes from the document. Pass designators ' +
+				'(e.g. ["R1","C3"]) for schematic parts, or raw ids/gIds. ' +
+				'The editor undo (Ctrl+Z) still works afterwards.',
+			parameters: P.obj({
+				designators: {
+					type: 'array',
+					description: 'Component designators to delete',
+					items: P.str('R1')
+				},
+				ids: {
+					type: 'array',
+					description: 'Raw shape ids / gIds (use when the designator is unknown)',
+					items: P.str('gge…')
+				}
+			}),
+			run: function (args) {
+				var err = need(['sch', 'schlib', 'pcb']);
+				if (err) return err;
+				var r = A.deleteShapes(args || {});
+				if (!r.ok) {
+					return '删除失败：' + r.error +
+						(r.missing && r.missing.length ? '；未找到：' + r.missing.join(', ') : '');
+				}
+				return '已删除 ' + r.deleted + ' 个' +
+					(r.missing && r.missing.length ? '；未找到：' + r.missing.join(', ') : '');
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
 			name: 'create_wire',
 			description: 'Draw a wire through a list of points on the schematic.',
 			parameters: P.obj({
@@ -701,6 +733,7 @@
 				var auto = args.autoLayout !== false;
 				var perRow = Math.max(1, Math.floor((b.maxX - b.minX) / 110));
 				var col = 0, row = 0, placed = 0, clamped = 0, failed = 0;
+				var used = {};   /* designators already handed out in this batch */
 				var lines = [];
 
 				list.slice(0, 300).forEach(function (item) {
@@ -723,10 +756,11 @@
 							rotation: item.rotation, value: item.value,
 							name: item.name, pre: item.pre,
 							designator: item.designator, package: item.package,
-							pinCount: item.pinCount, pinNames: item.pinNames
+							pinCount: item.pinCount, pinNames: item.pinNames,
+							used: used
 						});
 					}
-					var name = item.designator || item.part || item.uuid || '?';
+					var name = (r && r.designator) || item.designator || item.part || item.uuid || '?';
 					if (r && r.ok) {
 						placed++;
 						if (r.clamped) clamped++;
@@ -850,9 +884,10 @@
 		var READ = ['get_document_info', 'capture_image', 'locate_component'];
 		var SCH = ['get_components', 'get_netlist', 'get_bom', 'set_component_value',
 			'set_component_designator', 'audit_components', 'set_component_params',
+			'delete_components',
 			'search_library', 'place_device', 'place_devices',
 			'place_part', 'create_wire', 'create_net_label', 'create_symbol', 'ask_user'];
-		var PCB = ['get_pcb_info', 'get_components'];
+		var PCB = ['get_pcb_info', 'get_components', 'delete_components'];
 
 		var allow = READ.slice();
 		if (kind === 'sch' || kind === 'schlib') allow = allow.concat(SCH);

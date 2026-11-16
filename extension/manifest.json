@@ -1,7 +1,7 @@
 {
 	"name": "AI 助手",
 	"description": "AI 原理图审查 / PCB 审查 / BOM 分析 / 截图评审 / 自动生成原理图",
-	"version": "0.0.49",
+	"version": "0.0.52",
 	"icons": {
 		"default": "icon.svg"
 	},

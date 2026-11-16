@@ -276,7 +276,8 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 | `search_library` | 系统库**批量**检索 | queries[]（最多 20）, limit |
 | `place_device` | 放置单个系统库器件 | uuid, docType, x, y |
 | `place_devices` | **批量**放置（库器件或内置件，自动排版+图框约束） | placements[] |
-| `place_part` | 内置 R/C/L/D/LED/SW/Q_NPN/Q_PNP/M_NMOS/M_PMOS/XTAL/CONN2/通用件 | part, x, y, value… |
+| `place_part` | 内置 R/C/L/D/LED/SW/Q_NPN/Q_PNP/M_NMOS/M_PMOS/XTAL/连接器/通用件 | part, x, y, value… |
+| `delete_components` | 删除元件或图元（按位号 / gId） | designators[], ids[] |
 | `ask_user` | 一次提出多个问题并等待回答 | questions[{id,text,options[]}] |
 | `create_wire` | 画导线 | points[] |
 | `create_net_label` | 放网络标签 | x, y, name |
