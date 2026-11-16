@@ -6,9 +6,9 @@
 
 ---
 
-## 2026-11-16 · v0.0.57
+## 2026-11-16 · v0.0.59
 
-从初版迭代到 0.0.57（`0.0.x` 由每次构建自动递增）。
+从初版迭代到 0.0.59（`0.0.x` 由每次构建自动递增）。
 
 ### 新增
 
@@ -69,6 +69,10 @@
 
 ### 改进
 
+- **网表输出重做**：引脚逐行给出 `pin 编号 name=… type=… -> 网络`；网络改为
+  「Net | Class | Count | Pins | Source」表（class=power/ground/signal，source=label/wire），
+  并附问题清单（悬空、命名冲突、自动命名、缺 MPN/值/封装）；新增 `format:"json"`
+  输出机读结构（components/nets/issues）
 - **工具面收敛为增删改查**：只向模型暴露 `place`（放置，一次多个）/ `draw`（导线+网络标签）/
   `update_component`（改值/属性/位号）/ `delete_components`，其余细分工具保留为兼容别名
 - **连线自动吸附**：`create_wire` / `create_net_label` 自动吸附到最近的引脚或导线端点，

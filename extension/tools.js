@@ -189,9 +189,13 @@
 				'every component with its designator, name, package, and for each pin its ' +
 				'pin name/number and the net it is connected to. Also flags floating ' +
 				'(single-pin) nets, name conflicts and power/ground rails. Use this single ' +
-				'result to review the design as a whole — do NOT query net by net.',
+				'result to review the design as a whole — do NOT query net by net. ' +
+				'Pins carry their electrical type, nets carry class (power/ground/signal) ' +
+				'and source (label/wire); the issue list flags floating nets, name ' +
+				'conflicts, auto-named nets and missing MPN/value/package.',
 			parameters: P.obj({
-				maxComponents: P.num('Max components listed (default 150, max 400).')
+				maxComponents: P.num('Max components listed (default 150, max 400).'),
+				format: P.str('text (default) | json — json returns one machine-readable object')
 			}),
 			run: function (args) {
 				args = args || {};
@@ -222,68 +226,163 @@
 				});
 
 				var maxComp = Math.min(Number(args.maxComponents) || 150, 400);
-				var lines = [];
+				var format = String(args.format || 'text').toLowerCase();
 
-				/* ---- summary --------------------------------------------- */
+				/* ---- classify nets --------------------------------------- */
+				function netClass(name, auto) {
+					var n = String(name || '').toUpperCase();
+					if (/^(A|D|P)?GND|^VSS|^VEE|^0V$/.test(n)) return 'ground';
+					if (/^(VCC|VDD|VBAT|VIN|VBUS|3V3|5V|12V)|^[+-]?\d+(\.\d+)?V\d*$/.test(n)) return 'power';
+					return auto ? 'signal(auto)' : 'signal';
+				}
+
+				var pinNet = {};
+				nl.nets.forEach(function (n) {
+					n.pins.forEach(function (p) {
+						var k = p.designator + '|' + p.number;
+						pinNet[k] = pinNet[k] ? (pinNet[k] + ' / ' + n.name) : n.name;
+					});
+				});
+
+				/* ---- every component of every sheet ---------------------- */
+				var comps = [];
+				sheets.forEach(function (sh) {
+					D.components(sh.json).forEach(function (c) { comps.push(c); });
+				});
+				comps.sort(function (a, b) {
+					return String(a.designator).localeCompare(String(b.designator), 'en', { numeric: true });
+				});
+
+				function pinTypeOf(c, number) {
+					var ps = c.pins || [], i;
+					for (i = 0; i < ps.length; i++) {
+						if (String(ps[i].number) === String(number)) {
+							return String(ps[i].electric === undefined ? '' : ps[i].electric);
+						}
+					}
+					return '';
+				}
+
 				var floatNets = nl.nets.filter(function (n) { return n.pins.length === 1; });
 				var conflictNets = nl.nets.filter(function (n) { return n.conflict; });
 				var unnamed = nl.nets.filter(function (n) { return n.auto; });
+				var missingMpn = comps.filter(function (c) {
+					return !(c.params && c.params['Manufacturer Part']);
+				}).map(function (c) { return c.designator; });
+				var missingValue = comps.filter(function (c) { return !c.value; })
+					.map(function (c) { return c.designator; });
+				var missingPackage = comps.filter(function (c) { return !c.package; })
+					.map(function (c) { return c.designator; });
 
+				/* ---- machine readable form ------------------------------- */
+				var jsonOut = {
+					components: comps.slice(0, maxComp).map(function (c) {
+						return {
+							ref: c.designator,
+							value: c.value || '',
+							package: c.package || '',
+							mpn: (c.params && c.params['Manufacturer Part']) || null,
+							pins: (c.pins || []).slice().sort(function (a, b) {
+								return String(a.number).localeCompare(String(b.number), 'en', { numeric: true });
+							}).map(function (p) {
+								var net = pinNet[c.designator + '|' + p.number] || 'NC';
+								return {
+									num: p.number,
+									name: p.name || '',
+									type: String(p.electric === undefined ? '' : p.electric),
+									net: net
+								};
+							})
+						};
+					}),
+					nets: {},
+					issues: {
+						floating: floatNets.map(function (n) { return n.name; }),
+						conflicts: conflictNets.map(function (n) { return n.name; }),
+						autoNamed: unnamed.map(function (n) { return n.name; }),
+						missingMpn: missingMpn,
+						missingValue: missingValue,
+						missingPackage: missingPackage
+					}
+				};
+				nl.nets.forEach(function (n) {
+					jsonOut.nets[n.name] = {
+						class: netClass(n.name, n.auto),
+						pins: n.pins.map(function (p) { return p.designator + '.' + p.number; }),
+						autoNamed: !!n.auto,
+						source: n.labels && n.labels.length ? 'label' : 'wire'
+					};
+				});
+
+				if (format === 'json') return EAI.util.fmt(jsonOut, 60000);
+
+				/* ---- text form: summary ---------------------------------- */
+				var lines = [];
 				lines.push('## 概要');
 				lines.push('图纸 ' + nl.stats.sheets + ' · 元件 ' + comps.length +
 					' · 网络 ' + nl.stats.nets +
-					'（命名 ' + (nl.stats.nets - unnamed.length) +
+					'（命名 ' + nl.stats.namedNets +
 					'，未命名 ' + unnamed.length +
 					'，冲突 ' + conflictNets.length + '）· 引脚 ' + nl.stats.pins);
-				if (conflictNets.length) {
-					lines.push('命名冲突：' + conflictNets.slice(0, 20).map(function (n) {
-						return n.name + '[' + n.labels.map(function (l) { return l.name; }).join('/') + ']';
-					}).join(', '));
-				}
-				if (floatNets.length) {
-					lines.push('单引脚网络 ' + floatNets.length + ' 个（可能悬空）：' +
-						floatNets.slice(0, 40).map(function (n) {
-							var p = n.pins[0];
-							return n.name + '(' + p.designator + '.' + p.number + ')';
-						}).join(', ') + (floatNets.length > 40 ? ' …' : ''));
-				}
+				lines.push('图元：导线 ' + nl.stats.wires + ' 条');
+			lines.push('引脚 type：0 未定义 / 1 输入 / 2 输出 / 3 双向 / 4 电源（编辑器定义）');
 				lines.push('');
 
-				/* ---- component / pin / net table ------------------------- */
-				lines.push('## 元件引脚网络（位号 | 名称 | 封装 | 引脚=网络）');
-				if (!comps.length) {
-					lines.push('（没有元件）');
-				}
+				/* ---- components, one pin per line ------------------------ */
+				lines.push('## 元件与引脚（位号 | 值 | 封装 | MPN）');
+				if (!comps.length) lines.push('（没有元件）');
 				comps.slice(0, maxComp).forEach(function (c) {
-					var pins = (c.pins || []).map(function (p) {
-						var net = pinNet[c.designator + '|' + p.number] || 'NC';
-						var label = p.name ? (p.name + '(' + p.number + ')') : String(p.number);
-						return label + '=' + net;
-					});
+					var mpn = (c.params && c.params['Manufacturer Part']) || '-';
 					lines.push('- ' + (c.designator || '?') +
-						' | ' + (c.name || '') +
-						' | ' + (c.package || '') +
-						' | ' + (pins.join(', ') || '无引脚'));
+						' | ' + (c.value || '-') +
+						' | ' + (c.package || '-') +
+						' | MPN ' + mpn);
+					var pins = (c.pins || []).slice().sort(function (a, b) {
+						return String(a.number).localeCompare(String(b.number), 'en', { numeric: true });
+					});
+					if (!pins.length) { lines.push('    （无引脚）'); return; }
+					pins.forEach(function (p) {
+						var net = pinNet[c.designator + '|' + p.number] || 'NC';
+						var nm = (p.name && p.name !== p.number) ? (' name=' + p.name) : '';
+						lines.push('    pin ' + p.number + nm +
+							' type=' + pinTypeOf(c, p.number) + ' -> ' + net);
+					});
 				});
 				if (comps.length > maxComp) {
 					lines.push('- …还有 ' + (comps.length - maxComp) + ' 个元件未列出');
 				}
 				lines.push('');
 
-				/* ---- power / ground rails -------------------------------- */
-				var POWER = /^(GND|AGND|DGND|PGND|VCC|VDD|VSS|VEE|VBAT|VIN|VBUS|[+\-]?\d+V\d*)$/i;
-				var rails = nl.nets.filter(function (n) {
-					return POWER.test(String(n.name).replace(/\s/g, ''));
+				/* ---- nets, network centred -------------------------------- */
+				lines.push('## 网络（Net | Class | Count | Pins | Source）');
+				nl.nets.forEach(function (n) {
+					var members = n.pins.map(function (p) { return p.designator + '.' + p.number; });
+					var shown = members.slice(0, 12).join(', ');
+					if (members.length > 12) shown += ' …+' + (members.length - 12);
+					var note = n.auto ? 'auto-named' : '';
+					if (n.conflict) note = 'CONFLICT ' + (n.labels || []).map(function (l) { return l.name; }).join('/');
+					var src = (n.labels && n.labels.length) ? 'label' : 'wire';
+					lines.push('| ' + n.name + ' | ' + netClass(n.name, n.auto) + ' | ' +
+						members.length + ' | ' + (shown || '-') + ' | ' + src +
+						(note ? ' | ' + note : '') + ' |');
 				});
-				if (rails.length) {
-					lines.push('## 电源与地');
-					rails.forEach(function (n) {
-						var members = n.pins.map(function (p) { return p.designator + '.' + p.number; });
-						var shown = members.slice(0, 10).join(', ');
-						if (members.length > 10) shown += ' …+ ' + (members.length - 10);
-						lines.push('- ' + n.name + ' {' + members.length + '} ' + shown);
-					});
-				}
+				lines.push('');
+
+				/* ---- issues ---------------------------------------------- */
+				lines.push('## 问题清单');
+				lines.push('- 悬空/单引脚网络：' + (floatNets.length ?
+					floatNets.slice(0, 40).map(function (n) {
+						var p = n.pins[0];
+						return n.name + '(' + p.designator + '.' + p.number + ')';
+					}).join(', ') : '无'));
+				lines.push('- 命名冲突：' + (conflictNets.length ?
+					conflictNets.map(function (n) { return n.name; }).join(', ') : '无'));
+				lines.push('- 自动命名网络（重画后名字会变）：' + (unnamed.length ?
+					unnamed.slice(0, 40).map(function (n) { return n.name; }).join(', ') : '无'));
+				lines.push('- 缺 Manufacturer Part：' + (missingMpn.length ?
+					missingMpn.slice(0, 60).join(', ') : '无'));
+				if (missingValue.length) lines.push('- 缺值：' + missingValue.slice(0, 60).join(', '));
+				if (missingPackage.length) lines.push('- 缺封装：' + missingPackage.slice(0, 60).join(', '));
 
 				var text = lines.join('\n');
 				if (text.length > 24000) {
