@@ -70,8 +70,10 @@
 					var lcsc = it.lcsc && it.lcsc.number ? it.lcsc.number : '';
 					var mfr = (it.extra && (it.extra.Manufacturer || it.extra.manufacturer)) || '';
 					var pkg = it.package || it.packageName || '';
+					var pads = it.padCount || it.pad_count || it.pinCount || '';
 					lines.push((i + 1) + '. ' + (it.title || '?') +
 						' | 封装 ' + (pkg || '-') +
+						(pads ? ' | 焊盘 ' + pads : '') +
 						' | 厂商 ' + (mfr || '-') +
 						' | LCSC ' + (lcsc || '-') +
 						' | uuid=' + (it.uuid || '-') +
@@ -373,7 +375,10 @@
 				lines.push('- 悬空/单引脚网络：' + (floatNets.length ?
 					floatNets.slice(0, 40).map(function (n) {
 						var p = n.pins[0];
-						return n.name + '(' + p.designator + '.' + p.number + ')';
+						var lb = (n.labels || [])[0];
+						var tag = lb ? (' label ' + (lb.name || '?') +
+							(lb.x !== undefined ? ' @' + lb.x + ',' + lb.y : '')) : '';
+						return n.name + '(' + p.designator + '.' + p.number + tag + ')';
 					}).join(', ') : '无'));
 				lines.push('- 命名冲突：' + (conflictNets.length ?
 					conflictNets.map(function (n) { return n.name; }).join(', ') : '无'));
@@ -647,20 +652,30 @@
 		{
 			name: 'delete_components',
 			description:
-				'Delete components or shapes from the document. Pass designators ' +
-				'(e.g. ["R1","C3"]) for schematic parts, or raw ids/gIds. ' +
-				'The editor undo (Ctrl+Z) still works afterwards.',
+				'Delete components, wires or net labels. Use dryRun:true first to see exactly ' +
+				'what would be removed. Pass designators for parts, netLabels by name, or raw ids.',
 			parameters: P.obj({
 				designators: {
 					type: 'array',
 					description: 'Component designators to delete',
 					items: P.str('R1')
 				},
+				netLabels: {
+					type: 'array',
+					description: 'Net label names to delete (e.g. ["PROBE_A"])',
+					items: P.str('label name')
+				},
+				wires: {
+					type: 'array',
+					description: 'Wire ids to delete (see list_items)',
+					items: P.str('wire id')
+				},
 				ids: {
 					type: 'array',
-					description: 'Raw shape ids / gIds (use when the designator is unknown)',
+					description: 'Raw shape ids / gIds',
 					items: P.str('gge…')
-				}
+				},
+				dryRun: { type: 'boolean', description: 'Only list what would be deleted' }
 			}),
 			run: function (args) {
 				var err = need(['sch', 'schlib', 'pcb']);
@@ -670,8 +685,57 @@
 					return '删除失败：' + r.error +
 						(r.missing && r.missing.length ? '；未找到：' + r.missing.join(', ') : '');
 				}
-				return '已删除 ' + r.deleted + ' 个' +
-					(r.missing && r.missing.length ? '；未找到：' + r.missing.join(', ') : '');
+				var head = r.dryRun
+					? ('将删除 ' + r.count + ' 项（dryRun，未执行）：')
+					: ('已删除 ' + r.deleted + ' 项：');
+				return head + '\n' + (r.list || []).join('\n') +
+					(r.missing && r.missing.length ? '\n未找到：' + r.missing.join(', ') : '');
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
+			name: 'list_items',
+			description:
+				'List non-component graphics of the schematic: wires (id + points), net labels ' +
+				'(id + name + position) and power flags. Use the ids with delete_components.',
+			parameters: P.obj({
+				limit: P.num('Max items (default 300, max 800)'),
+				type: P.str('wire | netlabel | netflag (omit for all)')
+			}),
+			run: function (args) {
+				var err = need(['sch', 'schlib']);
+				if (err) return err;
+				args = args || {};
+				var all = A.listGraphics({ limit: args.limit });
+				var want = String(args.type || '').toLowerCase();
+				var items = want ? all.filter(function (x) { return x.type === want; }) : all;
+				if (!items.length) return '没有符合条件的图元。';
+				return items.map(function (x) {
+					if (x.type === 'wire') return '- wire ' + x.id + ' pts: ' + x.points;
+					return '- ' + x.type + ' ' + x.id + ' ' + (x.name || '') +
+						' @' + x.x + ',' + x.y;
+				}).join('\n');
+			}
+		},
+
+		/* ---------------------------------------------------------------- */
+		{
+			name: 'get_pins',
+			description: 'Return the pin list (number, name, electrical type, x/y) of one placed ' +
+				'component — use it when you need pin coordinates long after placing.',
+			parameters: P.obj({
+				designator: P.str('component designator, e.g. U1')
+			}, ['designator']),
+			run: function (args) {
+				var err = need(['sch', 'schlib']);
+				if (err) return err;
+				var pins = A.getPins(args && args.designator);
+				if (!pins) return '找不到元件 ' + (args && args.designator);
+				return pins.map(function (p) {
+					return 'pin ' + p.number + (p.name && p.name !== p.number ? ' ' + p.name : '') +
+						' type=' + p.type + ' @' + p.x + ',' + p.y;
+				}).join('\n') || '该元件没有引脚。';
 			}
 		},
 
@@ -822,7 +886,10 @@
 							type: 'array',
 							description: 'Pin names in pin order, GENERIC only',
 							items: P.str('pin name')
-						}
+						},
+						mpn: P.str('Manufacturer Part number'),
+						manufacturer: P.str('Manufacturer'),
+						supplierPart: P.str('Supplier (LCSC) part number')
 					})
 				},
 				autoLayout: { type: 'boolean', description: 'Grid-layout the ones without x/y (default true)' }
@@ -851,6 +918,22 @@
 							if (col % perRow === 0) row++;
 						}
 
+						/* GENERIC needs a complete pin description */
+						if (!item.uuid && String(item.part || '').toUpperCase() === 'GENERIC') {
+							if (!item.pinCount) {
+								failed++;
+								lines.push('✗ GENERIC — 需要 pinCount');
+								return null;
+							}
+							if (Array.isArray(item.pinNames) &&
+								item.pinNames.length !== Number(item.pinCount)) {
+								failed++;
+								lines.push('✗ GENERIC — pinNames 数量 ' + item.pinNames.length +
+									' 与 pinCount ' + item.pinCount + ' 不一致');
+								return null;
+							}
+						}
+
 						var task;
 						if (item.uuid) {
 							/* the editor inserts library parts asynchronously */
@@ -865,7 +948,7 @@
 										pre: r.prefix, value: item.value, name: item.name,
 										package: item.package, designator: dUuid
 									});
-									r.designator = dUuid;
+									r.designator = A.ensureDesignator(r.gId, dUuid);
 									/* keep the first pin on the placement grid */
 									var aligned = A.gridAlignComponent(r.gId, A.gridStep());
 									if (aligned && aligned.pin) {
@@ -882,6 +965,7 @@
 											r.x = Number(aligned.head.x);
 											r.y = Number(aligned.head.y);
 										}
+										r.bbox = A.bboxOfShape(aligned);
 									}
 								}
 								return r;
@@ -893,6 +977,8 @@
 								name: item.name, pre: item.pre,
 								designator: item.designator, package: item.package,
 								pinCount: item.pinCount, pinNames: item.pinNames,
+								mpn: item.mpn, manufacturer: item.manufacturer,
+								supplierPart: item.supplierPart,
 								used: used
 							}));
 						}
@@ -906,7 +992,9 @@
 								var pinTxt = (r.pins || []).slice(0, 8).map(function (p) {
 									return p.number + '@' + p.x + ',' + p.y;
 								}).join('  ');
-								lines.push('✓ ' + name + ' @' + r.x + ',' + r.y +
+								var boxTxt = r.bbox ? ('  box=' + Math.round(r.bbox.width) + 'x' +
+									Math.round(r.bbox.height)) : '';
+								lines.push('✓ ' + name + ' @' + r.x + ',' + r.y + boxTxt +
 									(pinTxt ? '  pins: ' + pinTxt : ''));
 							} else {
 								failed++;
@@ -1050,7 +1138,10 @@
 						type: 'array',
 						description: 'GENERIC only: pin names in order',
 						items: P.str('pin name')
-					}
+					},
+					mpn: P.str('Manufacturer Part number'),
+					manufacturer: P.str('Manufacturer'),
+					supplierPart: P.str('Supplier (LCSC) part number')
 				})
 			},
 			autoLayout: { type: 'boolean', description: 'Grid layout for items without x/y (default true)' }
@@ -1164,9 +1255,9 @@
 		var kind = EAI.eda.docKind();
 		var READ = ['get_document_info', 'capture_image', 'locate_component'];
 		var SCH = ['get_components', 'get_netlist', 'get_bom', 'audit_components',
-			'delete_components', 'update_component',
+			'delete_components', 'list_items', 'get_pins', 'update_component',
 			'search_library', 'place', 'draw', 'create_symbol', 'ask_user'];
-		var PCB = ['get_pcb_info', 'get_components', 'delete_components'];
+		var PCB = ['get_pcb_info', 'get_components', 'delete_components', 'list_items'];
 
 		var allow = READ.slice();
 		if (kind === 'sch' || kind === 'schlib') allow = allow.concat(SCH);

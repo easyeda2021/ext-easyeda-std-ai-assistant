@@ -49,7 +49,13 @@
 			'pre 传一个字母（如 U），引脚编号会自动显示，不要额外添加文字注释。',
 			'11. 删除元件用 delete_components（传位号或 gId），不要试图用别的工具变通。',
 			'12. 需要坐标时先调用 get_document_info：返回值里有 grid（snapSize/gridSize/origin）' +
-			'和 bounds（图框范围）。不要凭感觉猜坐标。'
+			'和 bounds（图框范围）。不要凭感觉猜坐标。',
+			'13. 删除是破坏性操作：只有用户明确要求时才删；先 delete_components {dryRun:true} ' +
+			'把清单给用户确认，再执行。不要为了“整理”删除已放置的库器件。',
+			'14. 流程要一次成型：先盘点 → ask_user 问清前提 → BOM 定稿 → 一次 place → 一次 draw → ' +
+			'get_netlist 复核。位号由插件自动分配，不要自己编号。',
+			'15. GENERIC 必须给全 pinCount、pinNames（数量与 pinCount 一致）、package、mpn，' +
+			'否则会被拒绝；系统库里有对应型号时优先用 uuid。'
 		];
 
 		var cat = P.builtinCatalog();

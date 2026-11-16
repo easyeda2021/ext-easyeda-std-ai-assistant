@@ -261,7 +261,7 @@
 					};
 				}),
 				labels: grp.labels.map(function (l) {
-					return { name: l.name, sheet: l.sheet, kind: l.kind };
+					return { name: l.name, sheet: l.sheet, kind: l.kind, x: l.x, y: l.y };
 				}),
 				sheets: Object.keys(grp.sheets)
 			});

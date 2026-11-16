@@ -277,7 +277,9 @@ EasyEDA 标准版的扩展 API 只提供「读文档 JSON / 读写图元 / 注�
 | `place_device` | 放置单个系统库器件 | uuid, docType, x, y |
 | `place_devices` | **批量**放置（库器件或内置件，自动排版+图框约束） | placements[] |
 | `place_part` | 内置 R/C/L/D/LED/SW/Q_NPN/Q_PNP/M_NMOS/M_PMOS/XTAL/连接器/通用件 | part, x, y, value… |
-| `delete_components` | 删除元件或图元（按位号 / gId） | designators[], ids[] |
+| `delete_components` | 删除元件/图元/网络标签/导线（dryRun 先出清单） | designators[], netLabels[], wires[], ids[], dryRun |
+| `list_items` | 列导线 / 网络标签 / 电源符号 | type?, limit? |
+| `get_pins` | 查某位号的引脚坐标与类型 | designator |
 | **`place`** | 放置元件（统一入口，一次多个；库器件或内置件，自动排版+编号） | items[] |
 | **`draw`** | 画导线 / 放网络标签（自动吸附到引脚或导线端点） | wires[], net_labels[] |
 | **`update_component`** | 批量改值 / 属性 / 位号 | edits[] |

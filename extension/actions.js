@@ -124,18 +124,40 @@
 		spec = spec || {};
 		var ids = Array.isArray(spec.ids) ? spec.ids.slice() : [];
 		var missing = [];
+		var dryRun = !!spec.dryRun;
 
 		var json;
 		try { json = EAI.api('getSource', { type: 'json' }); }
 		catch (e) { return { ok: false, error: 'cannot read the document: ' + e, missing: missing }; }
 		if (!json) return { ok: false, error: 'empty document', missing: missing };
 
-		/* resolve designators against the fresh document, not the cached json */
+		/* designators → component ids */
 		(spec.designators || []).forEach(function (d) {
 			var hit = findComponent(json, String(d).trim());
 			if (hit) ids.push(hit.gId);
 			else missing.push(String(d).trim());
 		});
+
+		/* net label names → label ids */
+		(spec.netLabels || []).forEach(function (name) {
+			var want = String(name || '').trim().toUpperCase();
+			var hit = false;
+			Object.keys(json.netlabel || {}).forEach(function (lid) {
+				var nl = json.netlabel[lid] || {};
+				if (String(nl.name || '').trim().toUpperCase() === want) {
+					ids.push(lid);
+					hit = true;
+				}
+			});
+			if (!hit) missing.push('label:' + name);
+		});
+
+		/* wire ids */
+		(spec.wires || []).forEach(function (wid) {
+			if (json.wire && Object.prototype.hasOwnProperty.call(json.wire, wid)) ids.push(wid);
+			else missing.push('wire:' + wid);
+		});
+
 		ids = ids.filter(function (v, i, a) { return !!v && a.indexOf(v) === i; });
 		if (!ids.length) return { ok: false, error: 'nothing to delete', missing: missing };
 
@@ -145,32 +167,96 @@
 			'FOOTPRINT', 'TRACK', 'COPPERAREA', 'SOLIDREGION', 'RECT', 'CIRCLE',
 			'TEXT', 'ARC', 'DIMENSION', 'PAD', 'VIA', 'HOLE', 'SVGNODE'];
 
-		var deleted = 0;
+		var found = [];
 		ids.forEach(function (id) {
-			var found = false;
+			var kinds = [];
 			TABLES.forEach(function (t) {
-				if (json[t] && Object.prototype.hasOwnProperty.call(json[t], id)) {
-					delete json[t][id];
-					found = true;
-				}
+				if (json[t] && Object.prototype.hasOwnProperty.call(json[t], id)) kinds.push(t);
 			});
-			if (Array.isArray(json.itemOrder)) {
-				var before = json.itemOrder.length;
-				json.itemOrder = json.itemOrder.filter(function (x) { return x !== id; });
-				if (json.itemOrder.length !== before) found = true;
-			}
-			if (found) deleted++;
+			var inOrder = Array.isArray(json.itemOrder) && json.itemOrder.indexOf(id) >= 0;
+			if (kinds.length || inOrder) found.push({ id: id, kinds: kinds });
 			else missing.push(id);
 		});
+		if (!found.length) return { ok: false, error: 'ids not found in the document', missing: missing };
 
-		if (!deleted) return { ok: false, error: 'ids not found in the document', missing: missing };
+		if (dryRun) {
+			return {
+				ok: true, dryRun: true, count: found.length,
+				list: found.map(function (f) { return f.id + ' (' + (f.kinds[0] || 'item') + ')'; }),
+				missing: missing
+			};
+		}
+
+		found.forEach(function (f) {
+			TABLES.forEach(function (t) {
+				if (json[t]) delete json[t][f.id];
+			});
+			if (Array.isArray(json.itemOrder)) {
+				json.itemOrder = json.itemOrder.filter(function (x) { return x !== f.id; });
+			}
+		});
 
 		try {
 			EAI.api('applySource', { source: json, createNew: false });
 		} catch (e2) {
 			return { ok: false, error: 'applySource failed: ' + e2, missing: missing };
 		}
-		return { ok: true, deleted: deleted, ids: ids, missing: missing };
+		return {
+			ok: true, deleted: found.length,
+			list: found.map(function (f) { return f.id + ' (' + (f.kinds[0] || 'item') + ')'; }),
+			missing: missing
+		};
+	};
+
+	/** Non-component graphics: wires, net labels, junction, net flags. */
+	A.listGraphics = function (opts) {
+		opts = opts || {};
+		var json = null;
+		try { json = EAI.api('getSource', { type: 'json' }); } catch (e) { return []; }
+		if (!json) return [];
+		var out = [], cap = Math.min(Number(opts.limit) || 300, 800);
+
+		function pts(arr) {
+			return (arr || []).map(function (p) { return Number(p.x) + ',' + Number(p.y); }).join(' ');
+		}
+		Object.keys(json.wire || {}).forEach(function (id) {
+			var w = json.wire[id] || {};
+			out.push({ type: 'wire', id: id, points: pts(w.pointArr).slice(0, 120) });
+		});
+		Object.keys(json.netlabel || {}).forEach(function (id) {
+			var n = json.netlabel[id] || {};
+			var p = n.pinDot || {};
+			out.push({ type: 'netlabel', id: id, name: n.name || '', x: Number(p.x), y: Number(p.y) });
+		});
+		Object.keys(json.netflag || {}).forEach(function (id) {
+			var n = json.netflag[id] || {};
+			var p = n.pinDot || {};
+			var nm = (n.mark && n.mark.netFlagString) || (n.configure && n.configure.partId) || '';
+			out.push({ type: 'netflag', id: id, name: String(nm), x: Number(p.x), y: Number(p.y) });
+		});
+		return out.slice(0, cap);
+	};
+
+	/** Pin coordinates of an existing component. */
+	A.getPins = function (designator) {
+		var json = null;
+		try { json = EAI.api('getSource', { type: 'json' }); } catch (e) { return null; }
+		var hit = findComponent(json || {}, String(designator || '').trim());
+		if (!hit) return null;
+		var shape = null;
+		try { shape = EAI.api('getShape', { id: hit.gId, cmdKey: 'schlib' }); }
+		catch (e) { return null; }
+		if (!shape) return null;
+		return Object.keys(shape.pin || {}).map(function (pid) {
+			var p = shape.pin[pid];
+			return {
+				number: (p.num && p.num.text) || '',
+				name: (p.name && p.name.text) || '',
+				type: String(p.configure && p.configure.electric !== undefined ? p.configure.electric : ''),
+				x: Number(p.pinDot && p.pinDot.x),
+				y: Number(p.pinDot && p.pinDot.y)
+			};
+		});
 	};
 
 	/** Renames a component (its designator / prefix). */
@@ -260,6 +346,68 @@
 		});
 		if (best && bd <= (tol || 0)) return { x: best.x, y: best.y, snapped: true, dist: bd };
 		return { x: x, y: y, snapped: false };
+	};
+
+	/** Bounding box of a placed symbol (rect/polyline/pins/annotations). */
+	A.bboxOfShape = function (shape) {
+		if (!shape) return null;
+		var xs = [], ys = [];
+		function acc(x, y) {
+			x = Number(x); y = Number(y);
+			if (isFinite(x) && isFinite(y)) { xs.push(x); ys.push(y); }
+		}
+		Object.keys(shape.rect || {}).forEach(function (id) {
+			var r = shape.rect[id];
+			acc(r.x, r.y);
+			acc(Number(r.x) + Number(r.width), Number(r.y) + Number(r.height));
+		});
+		['polyline', 'polygon', 'path', 'arc'].forEach(function (kind) {
+			Object.keys(shape[kind] || {}).forEach(function (id) {
+				var o = shape[kind][id];
+				(o.pointArr || []).forEach(function (p) { acc(p.x, p.y); });
+			});
+		});
+		Object.keys(shape.pin || {}).forEach(function (id) {
+			var p = shape.pin[id];
+			acc(p.pinDot && p.pinDot.x, p.pinDot && p.pinDot.y);
+			if (p.configure) acc(p.configure.x, p.configure.y);
+		});
+		Object.keys(shape.annotation || {}).forEach(function (id) {
+			var a = shape.annotation[id];
+			acc(a.x, a.y);
+		});
+		if (!xs.length) return null;
+		var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+		var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+		return {
+			x: minX, y: minY,
+			width: Math.round((maxX - minX) * 10) / 10,
+			height: Math.round((maxY - minY) * 10) / 10
+		};
+	};
+
+	/** Makes sure the placed block really carries the designator we assigned. */
+	A.ensureDesignator = function (gId, designator) {
+		if (!gId || !designator) return designator || '';
+		try {
+			var shape = EAI.api('getShape', { id: gId, cmdKey: 'schlib' });
+			var ann = (shape && shape.annotation) || {};
+			var cur = '', patch = {};
+			Object.keys(ann).forEach(function (k) {
+				var a = ann[k];
+				if (a && a.mark === 'P') {
+					cur = String(a.string || '');
+					patch[k] = { string: String(designator) };
+				}
+			});
+			if (cur !== String(designator) && Object.keys(patch).length) {
+				EAI.api('updateShape', {
+					shapeType: 'schlib',
+					jsonCache: { gId: gId, annotation: patch }
+				});
+			}
+		} catch (e) { /* ignore */ }
+		return String(designator);
 	};
 
 	/**
@@ -852,20 +1000,36 @@
 	 * number parts, so we scan the document (plus the current batch) and pick
 	 * the first unused number.
 	 */
+	var designatorRegistry = {};   /* numbers handed out in this session */
+
 	A.nextDesignator = function (prefix, used) {
 		prefix = String(prefix || 'U').replace(/[^A-Za-z]/g, '') || 'U';
 		used = used || {};
-		var max = 0;
-		var comps = [];
-		try { comps = EAI.eda.components(EAI.eda.activeJson()) || []; }
-		catch (e) { comps = []; }
 		var re = new RegExp('^' + prefix + '(\d+)$');
+		var max = 0;
+
+		/* numbers already handed out in this session: the editor may not have
+		   surfaced freshly placed blocks in getSource yet, which is what used
+		   to produce duplicate designators */
+		Object.keys(designatorRegistry).forEach(function (d) {
+			var m = re.exec(d);
+			if (m) max = Math.max(max, Number(m[1]));
+		});
+
+		/* numbers already present in the document */
+		var comps = [];
+		try {
+			var fresh = EAI.api('getSource', { type: 'json' });
+			comps = EAI.eda.components(fresh || {}) || [];
+		} catch (e) { comps = []; }
 		comps.forEach(function (c) {
 			var m = re.exec(String(c.designator || ''));
 			if (m) max = Math.max(max, Number(m[1]));
 		});
+
 		var n = max + 1;
-		while (used[prefix + n]) n++;
+		while (designatorRegistry[prefix + n] || used[prefix + n]) n++;
+		designatorRegistry[prefix + n] = true;
 		used[prefix + n] = true;
 		return prefix + n;
 	};
@@ -895,6 +1059,9 @@
 			cp = segs.join('`');
 		}
 		if (opts.package) cp = A.setCParaParam(cp, 'package', opts.package);
+		if (opts.mpn) cp = A.setCParaParam(cp, 'Manufacturer Part', opts.mpn);
+		if (opts.manufacturer) cp = A.setCParaParam(cp, 'Manufacturer', opts.manufacturer);
+		if (opts.supplierPart) cp = A.setCParaParam(cp, 'Supplier Part', opts.supplierPart);
 
 		var annPatch = {};
 		Object.keys(shape.annotation || {}).forEach(function (id) {
@@ -1043,6 +1210,7 @@
 							return shape.annotation[k];
 						}).filter(function (a) { return a && a.mark === 'P'; })[0];
 						out.designator = (pAnn && pAnn.string) || '';
+						out.bbox = A.bboxOfShape(shape);
 					} catch (e) { /* ignore */ }
 				}
 				resolve(out);
@@ -1114,8 +1282,11 @@
 			}
 			A.applyTemplateMeta(block.head.gId, {
 				pre: tpl.pre, value: spec.value, name: spec.name,
-				package: spec.package, designator: spec.designator
+				package: spec.package, designator: spec.designator,
+				mpn: spec.mpn, manufacturer: spec.manufacturer,
+				supplierPart: spec.supplierPart
 			});
+			A.ensureDesignator(block.head.gId, spec.designator);
 			var aligned = A.gridAlignComponent(block.head.gId, step);
 			if (aligned && aligned.pin) {
 				pins = Object.keys(aligned.pin).map(function (pid) {
@@ -1129,10 +1300,11 @@
 				});
 				if (aligned.head) { pos.x = Number(aligned.head.x); pos.y = Number(aligned.head.y); }
 			}
+			var bboxT = A.bboxOfShape(aligned);
 			return {
 				ok: true, gId: block.head.gId, x: pos.x, y: pos.y,
 				part: spec.part, clamped: pos.clamped,
-				designator: spec.designator || '', pins: pins
+				designator: spec.designator || '', pins: pins, bbox: bboxT
 			};
 		}
 
@@ -1159,6 +1331,9 @@
 		}
 		sym.rotation = spec.rotation || 0;
 		sym.package = spec.package || sym.package;
+		if (spec.mpn) sym.manufacturerPart = spec.mpn;
+		if (spec.manufacturer) sym.manufacturer = spec.manufacturer;
+		if (spec.supplierPart) sym.supplierPart = spec.supplierPart;
 		if (spec.name) sym.name = spec.name;
 		if (spec.value) sym.value = spec.value;
 
@@ -1167,10 +1342,14 @@
 
 		A.applyTemplateMeta(res.gId, {
 			pre: sym.pre || spec.pre, value: spec.value, name: spec.name,
-			package: spec.package, designator: spec.designator
+			package: spec.package, designator: spec.designator,
+			mpn: spec.mpn, manufacturer: spec.manufacturer,
+			supplierPart: spec.supplierPart
 		});
+		A.ensureDesignator(res.gId, spec.designator);
 		if (spec.designator) A.setComponentDesignator(res.gId, spec.designator);
 		var alignedF = A.gridAlignComponent(res.gId, step2);
+		var bboxF = A.bboxOfShape(alignedF);
 		var fpins;
 		if (alignedF && alignedF.pin) {
 			fpins = Object.keys(alignedF.pin).map(function (pid) {
@@ -1194,7 +1373,8 @@
 		}
 		return {
 			ok: true, gId: res.gId, x: sym.x, y: sym.y, part: spec.part,
-			clamped: pos.clamped, designator: spec.designator || '', pins: fpins
+			clamped: pos.clamped, designator: spec.designator || '',
+			pins: fpins, bbox: bboxF
 		};
 	};
 
