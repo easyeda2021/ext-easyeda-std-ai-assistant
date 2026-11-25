@@ -350,6 +350,10 @@ node tmp/test-*.js                  # 离线测试（本地开发脚本，不入
   - `dist/ext-easyeda-std-ai-assistant-v<版本>/` —— 解压目录，本地加载用
   - `dist/ext-easyeda-std-ai-assistant-v<版本>.zip` —— Release 附件，文件位于 zip 根目录
 - zip 由 `pack.js` 内置实现（zlib + 手写中央目录），不依赖系统 `zip`，Windows / CI 通用
+- 构建产物用用户向源文件 `README.user.md` / `README.user.zh-CN.md` 生成包内
+  `README.md` / `README.zh-CN.md`（自动填入版本号），并附中英安装说明；
+  仓库根的 README 保留开发、构建与贡献内容，不进安装包。缺少任一用户向 README 时
+  `pack.js` 直接报错退出
 - **扩展 ID 不进入产物**：安装时由用户自行填写，运行时由 `discoverExtId()` 探测；
   命令名与本地配置以该 ID 为键，所以安装后不要改
 - `manifest.json` 的 `version` 是唯一版本来源，运行时从加载的清单读取（关于页/诊断显示）

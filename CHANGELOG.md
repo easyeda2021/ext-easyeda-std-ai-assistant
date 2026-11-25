@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-11-25 · v0.0.66
+
+### 文档
+
+- 中英文 README 新增「参与贡献 / Contributing」章节：说明提交 PR 的约定、验证方式与
+  Bug 反馈需附的诊断信息
+- 中英文 README 的「已知限制」扩写为「已知问题」：补充上下文上限、
+  function calling / CORS、扩展 ID 固定、V6 工具栏按钮与图元删除等已知问题
+- 新增**用户向打包 README** `README.user.md` / `README.user.zh-CN.md`：只包含功能简介、
+  使用前提、安装、首次使用、数据说明、疑难排查与已知问题；构建时注入版本号并输出为包内
+  `README.md` / `README.zh-CN.md`，仓库根 README 的开发/构建/贡献内容不再进入安装包
+- README 的安装说明与安装提示同步注明「说明文档可选、不影响加载」
+
+### 构建
+
+- `tools/pack.js` 每次构建从 `README.user.md` / `README.user.zh-CN.md` 生成包内
+  `README.md` / `README.zh-CN.md`（替换 `{{VERSION}}`）；任一源文件缺失时直接报错退出
+
+---
+
 ## 2026-11-16 · v0.0.65
 
 从初版迭代到 0.0.65（`0.0.x` 由每次构建自动递增）。

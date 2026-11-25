@@ -1,134 +1,185 @@
-# AI 助手 · 嘉立创EDA标准版扩展
+# AI Assistant · EasyEDA Std Extension
 
-[English](README.en.md) · 项目地址：<https://github.com/easyeda2021/ext-easyeda-std-ai-assistant>
+[中文](README.zh-CN.md) · Repository: <https://github.com/easyeda2021/ext-easyeda-std-ai-assistant>
 
-把大模型接进 **嘉立创EDA标准版** 的原理图与 PCB 编辑器：
-原理图审查、BOM 分析与器件标准化、PCB / 画布视觉评审、按需求生成原理图、图片生成符号。
+Bring an LLM into the **EasyEDA Std** schematic and PCB editor: schematic review,
+BOM analysis and component standardisation, PCB / canvas visual review, schematic
+generation from a requirement, and symbol generation from an image.
 
-> 仅支持 **嘉立创EDA标准版（Std / v6）**；专业版（Pro）的 `.eext` 与 `eda.dmt_*` 体系不通用。
+> **EasyEDA Std only** (v6). The Pro edition's `.eext` and
+> `eda.dmt_*` APIs are a different system and are not supported.
+
+Contributions are welcome — see [Contributing](#contributing) for the workflow
+and [Known issues](#known-issues) for current limitations.
 
 ---
 
-## 特性
+## Features
 
-- **原理图审查**：整工程网表（元件→引脚→网络），检查悬空脚、命名冲突、未命名网络
-- **器件标准化**：找出缺封装 / 型号 / 供应商 / 料号的元件，并用系统库与模型知识补全属性
-- **BOM 分析**：缺值、缺封装、重复物料与采购建议
-- **PCB / 截图评审**：板框、布局、网络统计 + 画布截图交给视觉模型
-- **生成原理图**：优先用 EDA 系统库的真实器件，查不到才现场生成符号
-- **符号生成**：一次画出矩形框 + 独立引脚 + 完整属性（含 Manufacturer Part）
-- **Agent 循环**：模型可读网表 / BOM / 截图，也能直接改元件、连线与属性；
-  工具面按增删改查收敛（place / draw / update_component / delete_components）；
-  工具调用合并为一张可展开的过程卡片（运行中动态刷新，结束折叠汇总）；
-  生成原理图支持批量检索 / 批量放置，必要时用问答页签一次问清所有前提
-- **多供应商 / 多模型**：同时保存多个供应商与模型，设置里可增删、拉取模型列表；
-  面板发送键左侧下拉可随时切换
-- **中英双语界面**：菜单、工具栏、弹窗与正文均按编辑器语言自动切换
+- **Schematic review** — whole-project netlist (component → pin → net); floating
+  pins, naming conflicts, unnamed nets
+- **Component standardisation** — finds parts missing footprint / MPN / supplier /
+  supplier part and fills them from the EDA library plus model knowledge
+- **BOM analysis** — missing value or footprint, duplicate parts, purchasing advice
+- **PCB / screenshot review** — board outline, placement, net statistics, plus a
+  canvas screenshot handed to a vision model
+- **Schematic generation** — real parts from the EDA system library first, symbols
+  drawn on the fly only when nothing matches
+- **Symbol generation** — body rectangle, individual pins and full attributes
+  (including Manufacturer Part) in a single call
+- **Agent loop** — the model reads netlists / BOM / screenshots and can edit
+  values, attributes, wires and labels; tool calls collapse into one expandable
+  progress card (live while running, summarised when done)
+- **Multiple providers / models** — store several providers and models, fetch a
+  provider's model list, switch models from the panel
+- **Bilingual UI** — menus, toolbar, dialogs and body text follow the editor language
 
-## 安装
+## Install
 
-从 [Releases](https://github.com/easyeda2021/ext-easyeda-std-ai-assistant/releases)
-下载最新的 `ext-easyeda-std-ai-assistant-v<版本>.zip` 并解压。
-包内附中文 `安装说明.txt` 与英文 `INSTALL.en.txt`。
+Download the latest `ext-easyeda-std-ai-assistant-v<version>.zip` from
+[Releases](https://github.com/easyeda2021/ext-easyeda-std-ai-assistant/releases)
+and unzip it.
 
-1. 嘉立创EDA → **高级 → 扩展 → 扩展配置 → 加载扩展**
-2. **一次性全选**解压出来的**全部文件**（manifest.json、locale.txt、icon.svg、所有 .js）
-3. 扩展 ID 自行填写一个英文标识（例如 `aiassistant`），记住它
+1. EasyEDA Std → **Advanced → Extension → Extension configuration → Load extension**
+2. Select **all** unzipped files at once (`manifest.json`, `locale.txt`,
+   `icon.svg`, every `.js`)
+3. Enter any English identifier as the extension ID (for example `aiassistant`)
 
-> ID 会拼进命令名、本地配置也以它为键，**安装后不要改**；升级时先移除旧扩展，
-> 再用同一 ID 加载。ID 不需要体现在打包产物里——填入任意合法标识都能工作。
+The package also ships `README.md`, `README.zh-CN.md`, `安装说明.txt` and
+`INSTALL.en.txt` for offline reference; these docs can be selected or skipped —
+they do not affect loading.
 
-本地构建：
+> The ID becomes part of every command name and keys the local configuration, so
+> **do not change it after installing**. To upgrade, remove the old extension and
+> load the new files with the same ID. The ID is not baked into the build.
 
-```bash
-node tools/pack.js     # → dist/ext-easyeda-std-ai-assistant-v<版本>.zip
-```
-
-## 快速使用
-
-- **高级 ▸ AI 助手 ▸ AI 助手…** 打开面板（旧版客户端另有工具栏按钮）
-- 首次使用先点 **设置**：选协议、填接口地址 / API Key / 模型，可「测试连接」
-- 点胶囊（原理图审查 / BOM 分析 / 器件标准化 / 生成原理图 / 识别符号 …）填入需求，
-  确认后 **发送**（`Ctrl + Enter`）
-- 审查类功能结束后出现**报告卡片**：可预览或下载 Markdown / HTML
-- header 的**日志**图标打开独立日志窗口，可「复制全部」反馈问题
-- 输入框支持 **粘贴 / 拖入图片**；运行中点红色方形按钮可停止
-
-## 目录结构
-
-```
-extension/              扩展本体
-  manifest.json         清单（name / version / icons / scripts）
-  locale.txt            宿主菜单与标题的本地化词条（编辑器 Locale 直接读取）
-  icon.svg              扩展图标（只用 SVG）
-  core.js               命名空间 / 配置 / 扩展 ID 识别 / 日志诊断
-  prompts.js            全部系统提示词（角色规则 / 胶囊任务要求 / 循环催办）
-  i18n.js               界面全量本地化（中文 → 英文，渲染时按字典替换）
-  llm.js                OpenAI + Anthropic 客户端（对话 / 视觉 / 工具调用）
-  eda.js                文档模型：元件、BOM、PCB、截图、定位
-  eda-netlist.js        连通性引擎（导线/引脚/网络标签 + 编辑器网络名校核）
-  parts.js              常用器件原始 LIB 模板（18 种），放置不查库、就地改位号/值/封装
-  actions.js            写回文档：改值、改属性、画线、放标签、建符号
-  tools.js              给模型的工具（JSON Schema + 实现）
-  agent.js              Agent 循环 + 快捷胶囊
-  ui-base.js            UI 基础：设计变量 / 内联样式 / 图标 / Markdown
-  ui.js                 面板：header、输入框、消息、发送与 Agent 接线
-  ui-report.js          报告卡片 + 报告预览 + 日志窗口
-  ui-settings.js        设置弹窗
-  ui-about.js           关于弹窗
-  main.js               引导：菜单、工具栏按钮、命令
-tools/pack.js           打包：版本自增 → 目录 + zip 产物
-.github/workflows/      手动触发构建并发布 Release
-```
-
-## 构建与测试
+Build locally:
 
 ```bash
-node tools/pack.js                  # 版本末位 +1
-node tools/pack.js --version 0.1.0  # 指定版本
-node tools/pack.js --no-zip         # 只生成解压目录
+node tools/pack.js     # → dist/ext-easyeda-std-ai-assistant-v<version>.zip
 ```
 
-产物都在 `dist/`（不入库）：
+## Quick start
 
-- `dist/ext-easyeda-std-ai-assistant-v<版本>/` —— 解压目录，本地加载用
-- `dist/ext-easyeda-std-ai-assistant-v<版本>.zip` —— Release 附件，文件位于 zip 根目录
+- Open the panel from **Advanced ▸ AI Assistant ▸ AI Assistant…** (older clients also get a toolbar button)
+- Open **Settings** first: choose the protocol, fill in endpoint / API key / model,
+  then use *Test connection*
+- Click a pill (schematic review / BOM analysis / standardise parts / generate
+  schematic / read symbol …) to fill in the request, then **send** (`Ctrl + Enter`)
+- Review tasks finish with a **report card**: preview it or download Markdown / HTML
+- The **log** icon in the header opens a separate log window with *Copy all*
+- The input accepts **pasted / dropped images**; the red square button stops a run
 
-离线测试脚本放在 `tmp/`（不入库），本仓库不包含。
+## Layout
 
-## 发布
+```
+extension/              the extension itself
+  manifest.json         manifest (name / version / icons / scripts)
+  locale.txt            host menu & dialog-title strings (read by the editor Locale)
+  icon.svg              icon (SVG only)
+  core.js               namespace / config / extension-id detection / logging
+  prompts.js            every model-facing prompt (persona, task rules, nudges)
+  i18n.js               full UI localisation (Chinese → English at render time)
+  llm.js                OpenAI + Anthropic clients (chat / vision / tool calls)
+  eda.js                document model: components, BOM, PCB, screenshots, locating
+  eda-netlist.js        connectivity engine (wires / pins / net labels)
+  actions.js            writes back to the document: values, attributes, wires, symbols
+  tools.js              tools exposed to the model (JSON Schema + implementation)
+  agent.js              agent loop + quick pills
+  ui-base.js            UI primitives: tokens / inline styles / icons / Markdown
+  ui.js                 panel: header, composer, messages, agent wiring
+  ui-report.js          report card + preview + log window
+  ui-settings.js        settings dialog
+  ui-about.js           about dialog
+  main.js               bootstrap: menu, toolbar button, commands
+tools/pack.js           build: bump version, produce folder + zip
+.github/workflows/      manual build & GitHub release
+```
 
-GitHub Actions → **Release → Run workflow**，可选填版本号；留空则按
-`manifest.json` 末位 +1。工作流会构建并创建 tag 为版本号（如 `0.0.37`，不带 `v`）的
-Release，附上 zip；在 GitHub 上直接发布 Release 也会自动构建挂包，已有的空 Release
-可用 `tag` 输入补传。
+## Build & release
 
-- 版本唯一来源：`extension/manifest.json` 的 `version`（关于页与诊断显示的就是它）
-- `dist/`、`tmp/` 不入库（见 `.gitignore`）
+```bash
+node tools/pack.js                  # patch version +1
+node tools/pack.js --version 0.1.0  # explicit version
+node tools/pack.js --no-zip         # unpacked folder only
+```
 
-## 疑难排查
+Output lives in `dist/` (git-ignored):
 
-打开面板 → 设置 → **复制诊断信息**（含扩展 ID、API/对话框可用性、文档类型、模型配置、最近日志）。
-常见原因：扩展 ID 填错（命令不触发）、接口地址被 CORS 拦截、模型不支持 function calling。
+- `dist/ext-easyeda-std-ai-assistant-v<version>/` — unpacked, for a local install
+- `dist/ext-easyeda-std-ai-assistant-v<version>.zip` — release asset, files at the zip root
 
-## 文档
+Every build writes the **user-facing** `README.md` / `README.zh-CN.md` (from
+`README.user.md` / `README.user.zh-CN.md`, with the version filled in) plus
+`安装说明.txt` / `INSTALL.en.txt` into the folder and the zip. The repo READMEs
+keep the developer-facing build, layout and contribution notes.
 
-| 文档 | 内容 |
+Release: GitHub Actions → **Release → Run workflow** (version optional; empty
+bumps the patch). The workflow publishes a release tagged `<version>` (no `v`
+prefix) with the zip attached. Publishing a release on GitHub also builds and
+attaches the zip; an existing empty release can be filled with the `tag` input.
+
+- Single source of truth for the version: `extension/manifest.json`
+- `dist/` and `tmp/` are not committed
+
+## Troubleshooting
+
+Panel → Settings → **Copy diagnostics** (extension id, API / dialog availability,
+document type, model configuration, recent log). Common causes: wrong extension
+ID (commands never fire), endpoint blocked by CORS, model without function calling.
+
+## Docs
+
+| Document | Contents |
 |---|---|
-| [README.en.md](README.en.md) | English README |
-| [easyeda-std-extension-api.md](easyeda-std-extension-api.md) | 标准版扩展开发指南：开发流程 + 附录 A 全量 API + 附录 B 文件格式字段 |
-| [PRD.md](PRD.md) | 完整需求、功能细节、工具规范、数据模型、接口附录 |
-| [CHANGELOG.md](CHANGELOG.md) | 按天的版本变更与关键描述 |
-| [AGENTS.md](AGENTS.md) | 给 AI 编码助手的仓库约定与工作流 |
+| [README.zh-CN.md](README.zh-CN.md) | Chinese README (developer-facing) |
+| [README.user.md](README.user.md) / [README.user.zh-CN.md](README.user.zh-CN.md) | user-facing READMEs packaged into the zip |
+| [easyeda-std-extension-api.md](easyeda-std-extension-api.md) | extension development guide (Chinese): workflow + full API appendix + file-format field appendix |
+| [PRD.md](PRD.md) | full requirements, tool specs, data model, API appendix |
+| [CHANGELOG.md](CHANGELOG.md) | per-day changes and highlights |
+| [AGENTS.md](AGENTS.md) | repository conventions for AI coding agents |
 
-> 约定：任何新增需求或修改，需同步更新 **README（关键）**、**PRD（细节）**、**CHANGELOG（按天）**。
+## Contributing
 
-## 许可证
+Issues and pull requests are welcome — bug reports, new review rules, extra
+providers and translations all help.
 
-本项目基于 [Apache License 2.0](LICENSE) 开源。
+- Keep each change focused; explain the problem, the approach and how you
+  tested it (editor menu / panel / offline tests).
+- Follow the repository conventions in [AGENTS.md](AGENTS.md): ES5-style JS
+  (`var` / `function` only), prompts only in `extension/prompts.js`, inline
+  styles via `st()`, and no file over 800 lines.
+- Sync the docs when behaviour changes: `README.md` / `README.zh-CN.md`,
+  `PRD.md` and `CHANGELOG.md`.
+- Run `node --check` on the files you touched and `node tools/pack.js --no-zip`
+  to confirm the build.
+- For a bug report, attach the diagnostics from **Settings → Copy diagnostics**
+  and the log-window output when possible.
 
-## 已知限制
+Contributions are released under the Apache License 2.0.
 
-- 网表跨图纸连接依赖网络标签；极端 bus / 无 junction 交叠可能与编辑器略有出入
-- 系统库检索依赖登录态，失败时自动退回模型知识生成符号
-- 界面英文由字典逐条映射，新增文案若未加词条会显示中文
+## Known issues
+
+- **Cross-sheet nets** are inferred from net labels; bus lines and overlapping
+  wires without a junction can differ from the editor's own netlist.
+- **System-library search** needs a logged-in EasyEDA session; when it fails,
+  generation falls back to model-built symbols. The built-in templates cover
+  only common parts (R/C/L/D/LED/switch/transistor/crystal/connector).
+- **Context caps** — the whole-project netlist is trimmed (~24k characters,
+  300 components, 200 BOM rows), so very large projects are reviewed partially.
+- **No function calling, no Agent** — the provider must support tool calls, and
+  OpenAI-compatible gateways must also allow browser CORS.
+- **English UI** is a dictionary lookup: a new string without an `i18n.js` entry
+  stays Chinese, and unknown editor locales are treated as English.
+- **The extension ID is fixed after install** — command names and local settings
+  are keyed by it; changing it loses settings and the menu stops working.
+- **V6 toolbar button** — `createToolbarButton` no longer renders in V6; use
+  **Advanced ▸ AI Assistant**. `insertShape` / `edit.unitConvert` are not
+  registered either.
+- **Deleting imported shapes** — `api('delete')` has no effect on shapes imported
+  through jsonCache; the extension rewrites the document source instead and only
+  covers shape types it understands.
+
+## License
+
+Released under the [Apache License 2.0](LICENSE).

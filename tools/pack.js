@@ -33,6 +33,13 @@ const REQUIRED = [
 	'ui-base.js', 'ui.js', 'ui-report.js', 'ui-settings.js', 'ui-about.js', 'main.js'
 ];
 
+/* user-facing docs shipped with every build; the repo's own READMEs are for
+ * contributors, so the zip gets the trimmed user variants renamed to README.* */
+const DOCS = [
+	{ src: 'README.user.md', out: 'README.md' },
+	{ src: 'README.user.zh-CN.md', out: 'README.zh-CN.md' }
+];
+
 /* --------------------------------------------------------------- version -- */
 
 /**
@@ -175,6 +182,7 @@ function installNotes(version) {
 		'注意',
 		'----',
 		'· 文件必须全选，且不能放在子目录里（加载器按文件名匹配 manifest 的 scripts）',
+		'· README.md / README.zh-CN.md 等说明文档可不选，选中也不影响加载',
 		'· 扩展 ID 安装后不要改：命令名与本地配置都以它为键',
 		'· 如果按钮/菜单出现但点不动，打开 设置 → 诊断 复制信息排查'
 	].join('\r\n');
@@ -201,6 +209,8 @@ function installNotesEn(version) {
 		'-----',
 		'- Every file must be selected, and none may sit in a sub-folder',
 		'  (the loader matches manifest scripts by file name).',
+		'- README / install-note files are documentation only; they can be skipped',
+		'  or selected without affecting the load.',
 		'- Do not change the extension ID after installing: command names and the',
 		'  local configuration are keyed by it.',
 		'- If the button or menu appears but does nothing, open Settings -> Diagnostics',
@@ -222,6 +232,15 @@ function main() {
 		.filter((f) => !fs.existsSync(path.join(SRC, f)));
 	if (missing.length) {
 		console.error('Missing files:\n  ' + missing.join('\n  '));
+		process.exit(1);
+	}
+
+	const missingDocs = DOCS.filter(function (d) {
+		return !fs.existsSync(path.join(ROOT, d.src));
+	});
+	if (missingDocs.length) {
+		console.error('Missing docs (both user READMEs are shipped in the build):\n  ' +
+			missingDocs.map(function (d) { return d.src; }).join('\n  '));
 		process.exit(1);
 	}
 
@@ -254,6 +273,13 @@ function main() {
 	/* install notes: Chinese first, English copy next to it */
 	fs.writeFileSync(path.join(out, '安装说明.txt'), installNotes(to), 'utf8');
 	fs.writeFileSync(path.join(out, 'INSTALL.en.txt'), installNotesEn(to), 'utf8');
+
+	/* user-facing READMEs travel with the package, with the version filled in */
+	DOCS.forEach(function (d) {
+		const text = fs.readFileSync(path.join(ROOT, d.src), 'utf8')
+			.replace(/\{\{VERSION\}\}/g, to);
+		fs.writeFileSync(path.join(out, d.out), text, 'utf8');
+	});
 
 	let zipPath = null;
 	if (!noZip) {

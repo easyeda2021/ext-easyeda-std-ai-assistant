@@ -80,6 +80,9 @@ node tools/pack.js --no-zip         # 只产出目录
 ```
 
 - 版本唯一来源是 `extension/manifest.json` 的 `version`，关于页与诊断都读它。
+- 安装包内的 README 由用户向源文件 `README.user.md` / `README.user.zh-CN.md` 生成：
+  构建时注入 `{{VERSION}}` 并输出为 `README.md` / `README.zh-CN.md`，只写安装、使用、
+  数据说明与已知问题；仓库根的 README 面向开发者。
 - `dist/`、`tmp/` 不入库。临时脚本、截图、测试一律放 `tmp/`。
 - 离线测试脚本（不在仓库内，本地 `tmp/`）：`test-extension.js`（端到端）、
   `test-llm.js`（端点/请求体）、`test-toolcalls.js`、`test-eda.js`、`markup-check.js`。
@@ -99,8 +102,10 @@ node tools/pack.js --no-zip         # 只产出目录
 
 ## 7. 提交与发布
 
-- 文档三件套同步：`README.md` / `README.en.md`（关键）、`PRD.md`（细节）、
+- 文档三件套同步：`README.md`（英文）/ `README.zh-CN.md`（关键）、`PRD.md`（细节）、
   `CHANGELOG.md`（按天，版本号取当天最新构建）。
+- 用户可见的安装 / 使用 / 已知问题变化，还要同步打包用的
+  `README.user.md` / `README.user.zh-CN.md`。
 - 提交信息用中文，标题一句话概括，正文按模块分点。
 - 发布：GitHub Actions → **Release → Run workflow**（版本可选），
   工作流构建并创建 tag 为 `<version>`（不带 v）的 Release，附

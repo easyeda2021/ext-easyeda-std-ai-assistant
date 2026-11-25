@@ -1,0 +1,164 @@
+# AI 助手 · 嘉立创EDA标准版扩展
+
+[English](README.md) · 项目地址：<https://github.com/easyeda2021/ext-easyeda-std-ai-assistant>
+
+把大模型接进 **嘉立创EDA标准版** 的原理图与 PCB 编辑器：
+原理图审查、BOM 分析与器件标准化、PCB / 画布视觉评审、按需求生成原理图、图片生成符号。
+
+> 仅支持 **嘉立创EDA标准版（Std / v6）**；专业版（Pro）的 `.eext` 与 `eda.dmt_*` 体系不通用。
+
+欢迎提交 Issue 与 PR：工作流见[参与贡献](#参与贡献)，当前限制见[已知问题](#已知问题)。
+
+---
+
+## 特性
+
+- **原理图审查**：整工程网表（元件→引脚→网络），检查悬空脚、命名冲突、未命名网络
+- **器件标准化**：找出缺封装 / 型号 / 供应商 / 料号的元件，并用系统库与模型知识补全属性
+- **BOM 分析**：缺值、缺封装、重复物料与采购建议
+- **PCB / 截图评审**：板框、布局、网络统计 + 画布截图交给视觉模型
+- **生成原理图**：优先用 EDA 系统库的真实器件，查不到才现场生成符号
+- **符号生成**：一次画出矩形框 + 独立引脚 + 完整属性（含 Manufacturer Part）
+- **Agent 循环**：模型可读网表 / BOM / 截图，也能直接改元件、连线与属性；
+  工具面按增删改查收敛（place / draw / update_component / delete_components）；
+  工具调用合并为一张可展开的过程卡片（运行中动态刷新，结束折叠汇总）；
+  生成原理图支持批量检索 / 批量放置，必要时用问答页签一次问清所有前提
+- **多供应商 / 多模型**：同时保存多个供应商与模型，设置里可增删、拉取模型列表；
+  面板发送键左侧下拉可随时切换
+- **中英双语界面**：菜单、工具栏、弹窗与正文均按编辑器语言自动切换
+
+## 安装
+
+从 [Releases](https://github.com/easyeda2021/ext-easyeda-std-ai-assistant/releases)
+下载最新的 `ext-easyeda-std-ai-assistant-v<版本>.zip` 并解压。
+包内另附中英双语 `README.md` / `README.zh-CN.md`，以及中文 `安装说明.txt` 与英文
+`INSTALL.en.txt`；这些说明文件选不选都不影响加载。
+
+1. 嘉立创EDA → **高级 → 扩展 → 扩展配置 → 加载扩展**
+2. **一次性全选**解压出来的**全部文件**（manifest.json、locale.txt、icon.svg、所有 .js）
+3. 扩展 ID 自行填写一个英文标识（例如 `aiassistant`），记住它
+
+> ID 会拼进命令名、本地配置也以它为键，**安装后不要改**；升级时先移除旧扩展，
+> 再用同一 ID 加载。ID 不需要体现在打包产物里——填入任意合法标识都能工作。
+
+本地构建：
+
+```bash
+node tools/pack.js     # → dist/ext-easyeda-std-ai-assistant-v<版本>.zip
+```
+
+## 快速使用
+
+- **高级 ▸ AI 助手 ▸ AI 助手…** 打开面板（旧版客户端另有工具栏按钮）
+- 首次使用先点 **设置**：选协议、填接口地址 / API Key / 模型，可「测试连接」
+- 点胶囊（原理图审查 / BOM 分析 / 器件标准化 / 生成原理图 / 识别符号 …）填入需求，
+  确认后 **发送**（`Ctrl + Enter`）
+- 审查类功能结束后出现**报告卡片**：可预览或下载 Markdown / HTML
+- header 的**日志**图标打开独立日志窗口，可「复制全部」反馈问题
+- 输入框支持 **粘贴 / 拖入图片**；运行中点红色方形按钮可停止
+
+## 目录结构
+
+```
+extension/              扩展本体
+  manifest.json         清单（name / version / icons / scripts）
+  locale.txt            宿主菜单与标题的本地化词条（编辑器 Locale 直接读取）
+  icon.svg              扩展图标（只用 SVG）
+  core.js               命名空间 / 配置 / 扩展 ID 识别 / 日志诊断
+  prompts.js            全部系统提示词（角色规则 / 胶囊任务要求 / 循环催办）
+  i18n.js               界面全量本地化（中文 → 英文，渲染时按字典替换）
+  llm.js                OpenAI + Anthropic 客户端（对话 / 视觉 / 工具调用）
+  eda.js                文档模型：元件、BOM、PCB、截图、定位
+  eda-netlist.js        连通性引擎（导线/引脚/网络标签 + 编辑器网络名校核）
+  parts.js              常用器件原始 LIB 模板（18 种），放置不查库、就地改位号/值/封装
+  actions.js            写回文档：改值、改属性、画线、放标签、建符号
+  tools.js              给模型的工具（JSON Schema + 实现）
+  agent.js              Agent 循环 + 快捷胶囊
+  ui-base.js            UI 基础：设计变量 / 内联样式 / 图标 / Markdown
+  ui.js                 面板：header、输入框、消息、发送与 Agent 接线
+  ui-report.js          报告卡片 + 报告预览 + 日志窗口
+  ui-settings.js        设置弹窗
+  ui-about.js           关于弹窗
+  main.js               引导：菜单、工具栏按钮、命令
+tools/pack.js           打包：版本自增 → 目录 + zip 产物
+.github/workflows/      手动触发构建并发布 Release
+```
+
+## 构建与测试
+
+```bash
+node tools/pack.js                  # 版本末位 +1
+node tools/pack.js --version 0.1.0  # 指定版本
+node tools/pack.js --no-zip         # 只生成解压目录
+```
+
+产物都在 `dist/`（不入库）：
+
+- `dist/ext-easyeda-std-ai-assistant-v<版本>/` —— 解压目录，本地加载用
+- `dist/ext-easyeda-std-ai-assistant-v<版本>.zip` —— Release 附件，文件位于 zip 根目录
+
+每次构建都会用用户向的 `README.user.md` / `README.user.zh-CN.md` 生成包内
+`README.md` / `README.zh-CN.md`（自动填入版本号），并与 `安装说明.txt`、
+`INSTALL.en.txt` 一起复制进目录与 zip。仓库根的 README 保留开发、构建与贡献说明。
+
+离线测试脚本放在 `tmp/`（不入库），本仓库不包含。
+
+## 发布
+
+GitHub Actions → **Release → Run workflow**，可选填版本号；留空则按
+`manifest.json` 末位 +1。工作流会构建并创建 tag 为版本号（如 `0.0.37`，不带 `v`）的
+Release，附上 zip；在 GitHub 上直接发布 Release 也会自动构建挂包，已有的空 Release
+可用 `tag` 输入补传。
+
+- 版本唯一来源：`extension/manifest.json` 的 `version`（关于页与诊断显示的就是它）
+- `dist/`、`tmp/` 不入库（见 `.gitignore`）
+
+## 疑难排查
+
+打开面板 → 设置 → **复制诊断信息**（含扩展 ID、API/对话框可用性、文档类型、模型配置、最近日志）。
+常见原因：扩展 ID 填错（命令不触发）、接口地址被 CORS 拦截、模型不支持 function calling。
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [README.md](README.md) | English README（开发向） |
+| [README.user.md](README.user.md) / [README.user.zh-CN.md](README.user.zh-CN.md) | 打进安装包的用户向 README |
+| [easyeda-std-extension-api.md](easyeda-std-extension-api.md) | 标准版扩展开发指南：开发流程 + 附录 A 全量 API + 附录 B 文件格式字段 |
+| [PRD.md](PRD.md) | 完整需求、功能细节、工具规范、数据模型、接口附录 |
+| [CHANGELOG.md](CHANGELOG.md) | 按天的版本变更与关键描述 |
+| [AGENTS.md](AGENTS.md) | 给 AI 编码助手的仓库约定与工作流 |
+
+> 约定：任何新增需求或修改，需同步更新 **README（关键）**、**PRD（细节）**、**CHANGELOG（按天）**。
+
+## 参与贡献
+
+欢迎提交 Issue 与 Pull Request：Bug 反馈、新的审查规则、更多模型供应商与翻译都很有用。
+
+- 一次改动只解决一个问题，说明背景、做法与验证方式（编辑器菜单 / 面板 / 离线测试）。
+- 遵守 [AGENTS.md](AGENTS.md) 的仓库约定：ES5 风格 JS（只用 `var` / `function`）、
+  提示词只放在 `extension/prompts.js`、样式用 `st()` 内联、单文件不超过 800 行。
+- 行为有变化时同步文档：`README.md` / `README.zh-CN.md`、`PRD.md`、`CHANGELOG.md`。
+- 提交前对改动文件跑 `node --check`，并用 `node tools/pack.js --no-zip` 确认能构建。
+- 反馈 Bug 时请附上 **设置 → 复制诊断信息** 的内容，方便时再附日志窗口的报错。
+
+贡献的代码按 Apache License 2.0 发布。
+
+## 已知问题
+
+- **跨图纸网络**依赖网络标签推断；总线、无 junction 的交叠导线等复杂情况可能与编辑器自带网表有出入。
+- **系统库检索**需要已登录的嘉立创EDA 会话；失败时退回由模型生成符号。内置模板只覆盖
+  常用器件（R/C/L/D/LED/开关/三极管/晶振/连接器）。
+- **上下文上限**：整工程网表会被裁剪（约 24k 字符、300 个元件、200 行 BOM），
+  超大工程只能审查到其中一部分。
+- **模型不支持 function calling 时 Agent 不可用**；OpenAI 兼容网关还须允许浏览器跨域（CORS）。
+- **英文界面**按字典逐条替换：新增文案若未补 `i18n.js` 词条仍显示中文；无法识别的编辑器语言按英文处理。
+- **扩展 ID 安装后固定**：命令名与本地配置都以它为键，改 ID 会导致设置丢失、菜单失效。
+- **V6 工具栏按钮**：`createToolbarButton` 在 V6 不再显示，请从 **高级 ▸ AI 助手** 打开；
+  `insertShape` / `edit.unitConvert` 也未注册。
+- **删除导入图元**：`api('delete')` 对 jsonCache 导入的图元不生效，扩展改为回写文档源码，
+  且只覆盖它认识的图元类型。
+
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。
